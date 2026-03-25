@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+
+# Local runtime and imported data
+data/*
+!data/.gitkeep
+extracted/*
+!extracted/.gitkeep
+
+# Local source files used during import work
+Asset registration.zip
