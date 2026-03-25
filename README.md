@@ -31,12 +31,7 @@ python3 app.py sync-csv
 This provisions the merged departments, creates department users if missing, and replaces asset rows from the CSV.
 
 ## Default users
-
-- `admin / admin123`
-- `fra_user / fra123`
-- `legal_user / legal123`
-- `md_user / md123`
-- `stg_user / stg123`
+Ask credentials from an admin.
 
 Additional department users are created automatically by the CSV sync when needed.
 
