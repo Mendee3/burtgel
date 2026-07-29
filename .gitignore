@@ -18,3 +18,12 @@ Asset registration.zip
 *.pem
 *.key
 credentials.json
+
+# New stack: backend (Python) + frontend (Node) local artifacts
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+*.log
+
+# Local Claude Code tooling config
+.claude/
