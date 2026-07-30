@@ -2316,6 +2316,9 @@ def nav_links(user, conn=None):
             f'<a href="/departments/{dept_slug}/assets">Хөрөнгийн бүртгэл</a>' if dept_slug else '<a href="/departments">Хэлтэс</a>',
         ]
 
+    if is_admin_or_above(user):
+        items.append('<a href="/incidents/">Зөрчил</a>')
+
     links_html = "".join(f"<li>{item}</li>" for item in items)
 
     # Public docs dropdown — visible to all logged-in users

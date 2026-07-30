@@ -73,10 +73,25 @@ class IncidentType:
         return compute_incident_status(self.severity, self.closed, self.created_at, has_action)
 
     @strawberry.field
-    def deadline(self) -> IncidentDeadlineType:
+    def deadline(self, info: Info) -> IncidentDeadlineType:
+        from burtgel_api.db.models import IncidentCorrectiveAction
         from burtgel_api.services.incident_service import compute_deadline
 
-        d = compute_deadline(self.severity, self.created_at)
+        if self.closed:
+            # Manually closed: freeze the countdown and never flag it as overdue —
+            # "overdue" specifically means "deadline expired with no corrective action".
+            d = compute_deadline(self.severity, self.created_at, reference_at=self.updated_at, force_not_overdue=True)
+        else:
+            earliest_action = (
+                info.context.db.query(IncidentCorrectiveAction)
+                .filter_by(incident_id=int(self.id))
+                .order_by(IncidentCorrectiveAction.created_at.asc())
+                .first()
+            )
+            # Once a corrective action exists, the countdown stops permanently at that
+            # moment instead of continuing to run against the current time.
+            reference_at = earliest_action.created_at if earliest_action else None
+            d = compute_deadline(self.severity, self.created_at, reference_at=reference_at)
         return IncidentDeadlineType(
             deadline_at=d["deadline_at"],
             hours_allowed=d["hours_allowed"],

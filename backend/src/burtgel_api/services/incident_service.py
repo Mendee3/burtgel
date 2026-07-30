@@ -81,15 +81,24 @@ def deadline_hours_for_severity(severity: str) -> int:
     return SEVERITY_DEADLINE_HOURS.get(severity, DEFAULT_DEADLINE_HOURS)
 
 
-def compute_deadline(severity: str, created_at: str) -> dict:
+def compute_deadline(
+    severity: str, created_at: str, reference_at: str | None = None, force_not_overdue: bool = False
+) -> dict:
     hours = deadline_hours_for_severity(severity)
     registered_at = _parse_dt(created_at)
     deadline_at = registered_at + dt.timedelta(hours=hours)
-    remaining = (deadline_at - now_utc()).total_seconds()
+    reference = _parse_dt(reference_at) if reference_at else now_utc()
+    remaining = (deadline_at - reference).total_seconds()
+    is_overdue = remaining < 0
+    if force_not_overdue and is_overdue:
+        # Manually closed past its deadline: don't show a misleading "time remaining"
+        # figure (the raw negative value), just clamp to zero.
+        is_overdue = False
+        remaining = 0
     return {
         "deadline_at": deadline_at.isoformat(),
         "hours_allowed": hours,
-        "is_overdue": remaining < 0,
+        "is_overdue": is_overdue,
         "remaining_seconds": int(remaining),
     }
 
