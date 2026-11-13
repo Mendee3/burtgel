@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { mn } from "../i18n/mn";
+import { CalendarIcon, ChevronIcon, ServerIcon, UserIcon } from "../components/incident/icons";
+import { SlaIndicator } from "../components/incident/SlaIndicator";
+import { StatusBadge } from "../components/incident/StatusBadge";
 import { formatDateTime } from "../lib/formatDateTime";
-import { deadlineLabel, STATUS_STYLE } from "../lib/incidentStatus";
 import { IncidentDetailPanel } from "./IncidentDetailPanel";
 import { RespondControl } from "./RespondControl";
 import { SeverityEditor } from "./SeverityEditor";
@@ -64,125 +66,152 @@ export type Incident = {
   auditTrail: IncidentAuditEntry[];
 };
 
-const SEVERITY_ACCENT: Record<string, string> = {
-  "Бага": "border-l-success",
-  "Дунд": "border-l-warning",
-  "Өндөр": "border-l-danger",
-  "Маш Өндөр": "border-l-danger",
-};
+// Descriptions longer than this get clamped with a "read more" toggle.
+const DESCRIPTION_CLAMP_CHARS = 180;
 
-const DEFAULT_SEVERITY_ACCENT = "border-l-border-strong";
+function MetaItem({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <span className="inline-flex min-w-0 items-center gap-1.5" title={label}>
+      <span className="text-muted">{icon}</span>
+      <span className="sr-only">{label}:</span>
+      <span className="break-words">{value}</span>
+    </span>
+  );
+}
 
 export function IncidentCard({
   incident,
   onDelete,
   onChanged,
+  canManage = true,
 }: {
   incident: Incident;
   onDelete: (incident: Incident) => void;
   onChanged: () => void;
+  canManage?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const accent = SEVERITY_ACCENT[incident.severity] ?? DEFAULT_SEVERITY_ACCENT;
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const lastPreviousSeverity = incident.severityHistory.at(-1)?.previousSeverity;
   const autoClosedNoResponse =
     !incident.closed && incident.correctiveActions.length === 0 && incident.deadline.isOverdue;
+  const title = incident.incidentType.trim();
+  const description = incident.description.trim();
+  const longDescription = description.length > DESCRIPTION_CLAMP_CHARS;
+  const detailsId = `incident-details-${incident.id}`;
 
   return (
-    <article className={`rounded-lg border border-border ${accent} border-l-4 bg-surface shadow-sm p-4 sm:p-5`}>
-      <div
-        className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 cursor-pointer select-none"
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        onClick={() => setExpanded((v) => !v)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            setExpanded((v) => !v);
-          }
-        }}
-      >
-        <div className="min-w-0 space-y-1 flex items-start gap-2">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-            className={`shrink-0 mt-1 text-muted transition-transform ${expanded ? "rotate-90" : ""}`}
-          >
-            <path d="M9 18l6-6-6-6" />
-          </svg>
-          <div className="min-w-0">
-            <h3 className="text-sm truncate">
-              <span className="font-medium text-text-secondary">{mn.incidentNumberLabel}</span>{" "}
-              <span className="text-muted">{incident.incidentId}</span>
-            </h3>
-            <p className="text-xs truncate">
-              <span className="font-medium text-text-secondary">{mn.incidentRegisteredDateLabel}</span>{" "}
-              <span className="text-muted">{formatDateTime(incident.createdAt)}</span>
-            </p>
-            <p className="text-xs truncate">
-              <span className="font-medium text-text-secondary">{mn.incidentRegisteredByLabel}</span>{" "}
-              <span className="text-muted">{incident.registeredByName || mn.noValue}</span>
-            </p>
+    <article className="rounded-xl border border-border bg-surface shadow-sm transition hover:shadow">
+      <div className="p-4 sm:p-5">
+        {/* Top row: ID, status, severity */}
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="font-mono text-sm font-semibold text-text break-all">{incident.incidentId}</span>
+            <StatusBadge status={incident.status} />
           </div>
+          <SeverityEditor
+            incidentId={incident.id}
+            currentSeverity={incident.severity}
+            previousSeverity={lastPreviousSeverity}
+            onChanged={onChanged}
+            canManage={canManage}
+          />
         </div>
-        <div className="shrink-0 flex flex-col items-end gap-2">
-          <div className="flex items-center flex-wrap justify-end gap-3">
-            <span
-              className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap ${
-                STATUS_STYLE[incident.status] ?? "bg-surface-alt text-muted"
-              }`}
-            >
-              {incident.status}
-            </span>
-            <span className="text-xs whitespace-nowrap">
-              <span className="font-medium text-text-secondary">{mn.incidentDeadlineLabel}:</span>{" "}
-              <span className="text-muted">
-                {deadlineLabel(incident.deadline.remainingSeconds, incident.deadline.isOverdue)} (
-                {incident.deadline.hoursAllowed}ц)
-              </span>
-            </span>
-            <SeverityEditor
-              incidentId={incident.id}
-              currentSeverity={incident.severity}
-              previousSeverity={lastPreviousSeverity}
-              onChanged={onChanged}
+
+        {/* Main: title, description, meta */}
+        <div className="mt-2 space-y-1.5">
+          {title && <h3 className="text-[15px] font-semibold leading-snug text-text break-words">{title}</h3>}
+          {description && (
+            <div>
+              <p
+                className={`text-sm leading-relaxed text-text-secondary whitespace-pre-line break-words ${
+                  longDescription && !descriptionOpen ? "line-clamp-2" : ""
+                }`}
+              >
+                {description}
+              </p>
+              {longDescription && (
+                <button
+                  type="button"
+                  onClick={() => setDescriptionOpen((v) => !v)}
+                  className="mt-0.5 rounded text-xs font-medium text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {descriptionOpen ? mn.readLess : mn.readMore}
+                </button>
+              )}
+            </div>
+          )}
+          {!title && !description && <p className="text-sm text-muted">{mn.noValue}</p>}
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-text-secondary">
+            <MetaItem icon={<ServerIcon size={14} />} label={mn.incidentSystemLocation} value={incident.systemLocation} />
+            <MetaItem
+              icon={<CalendarIcon size={14} />}
+              label={mn.incidentRegisteredAt}
+              value={formatDateTime(incident.createdAt)}
+            />
+            <MetaItem
+              icon={<UserIcon size={14} />}
+              label={mn.incidentRegisteredBy}
+              value={incident.registeredByName ?? ""}
             />
           </div>
+        </div>
+      </div>
+
+      {expanded && (
+        <div id={detailsId} className="px-4 pb-4 sm:px-5">
+          <IncidentDetailPanel incident={incident} onChanged={onChanged} />
+        </div>
+      )}
+
+      {/* Bottom row: SLA, respond, actions */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-b-xl border-t border-border bg-surface-alt/60 px-4 py-2.5 sm:px-5">
+        <SlaIndicator deadline={incident.deadline} status={incident.status} />
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
           <RespondControl
             incidentId={incident.id}
             status={incident.status}
             autoClosedNoResponse={autoClosedNoResponse}
             onChanged={onChanged}
+            canManage={canManage}
           />
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-primary hover:bg-primary-light focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            {expanded ? mn.incidentHideDetails : mn.incidentViewDetails}
+            <ChevronIcon size={14} className={`transition-transform ${expanded ? "-rotate-90" : "rotate-90"}`} />
+          </button>
+          {canManage && (
+            <button
+              type="button"
+              onClick={() => onDelete(incident)}
+              className="rounded-md px-2 py-1 text-xs text-danger hover:bg-danger-light focus:outline-none focus-visible:ring-2 focus-visible:ring-danger"
+            >
+              {mn.delete}
+            </button>
+          )}
         </div>
-      </div>
-
-      <div className="mt-3 space-y-2">
-        <div>
-          <p className="text-xs text-muted">{mn.incidentDescription}</p>
-          <p className="text-sm text-text mt-0.5">{incident.description || mn.noValue}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted">{mn.incidentSystemLocation}</p>
-          <p className="text-sm text-text mt-0.5">{incident.systemLocation || mn.noValue}</p>
-        </div>
-      </div>
-
-      {expanded && <IncidentDetailPanel incident={incident} onChanged={onChanged} />}
-
-      <div className="mt-4 pt-3 border-t border-border flex items-center justify-end">
-        <button onClick={() => onDelete(incident)} className="text-xs text-danger hover:underline">
-          {mn.delete}
-        </button>
       </div>
     </article>
+  );
+}
+
+export function IncidentCardSkeleton() {
+  return (
+    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm animate-pulse sm:p-5">
+      <div className="flex justify-between">
+        <div className="h-4 w-40 rounded bg-surface-alt" />
+        <div className="h-5 w-20 rounded-full bg-surface-alt" />
+      </div>
+      <div className="mt-3 h-4 w-2/3 rounded bg-surface-alt" />
+      <div className="mt-2 h-3 w-full rounded bg-surface-alt" />
+      <div className="mt-4 h-3 w-1/2 rounded bg-surface-alt" />
+    </div>
   );
 }

@@ -52,6 +52,15 @@ export const INCIDENT_FIELDS_FRAGMENT = gql`
   }
 `;
 
+export const GET_INCIDENT_ACCESS = gql`
+  query GetIncidentAccess {
+    incidentAccess {
+      canView
+      canManage
+    }
+  }
+`;
+
 export const GET_INCIDENTS = gql`
   ${INCIDENT_FIELDS_FRAGMENT}
   query GetIncidents($search: String) {

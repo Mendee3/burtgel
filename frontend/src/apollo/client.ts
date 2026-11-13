@@ -3,7 +3,7 @@ import { setContext } from "@apollo/client/link/context";
 import { getCsrfToken } from "./csrf";
 
 const httpLink = new HttpLink({
-  uri: import.meta.env.VITE_API_URL ?? "http://localhost:8001/graphql",
+  uri: import.meta.env.VITE_API_URL ?? "/graphql",
   credentials: "include",
 });
 

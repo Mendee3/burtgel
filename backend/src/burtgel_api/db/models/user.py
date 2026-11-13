@@ -21,6 +21,7 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String, default="")
     role: Mapped[str] = mapped_column(String, default="user")
     last_invited_at: Mapped[str | None] = mapped_column(String)
+    vuln_role: Mapped[str | None] = mapped_column(String, default="")
 
     department: Mapped["Department | None"] = relationship()
 

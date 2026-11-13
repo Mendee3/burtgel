@@ -1,7 +1,7 @@
 export const STATUS_STYLE: Record<string, string> = {
-  "Нээлттэй": "bg-primary-light text-primary",
-  "Хариу арга хэмжээ авсан": "bg-success-light text-success",
-  "Хаагдсан": "bg-surface-alt text-muted",
+  "Нээлттэй": "bg-primary-light text-primary border-primary-border",
+  "Хариу арга хэмжээ авсан": "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Хаагдсан": "bg-surface-alt text-text-secondary border-border",
 };
 
 const ACTION_LABELS: Record<string, string> = {

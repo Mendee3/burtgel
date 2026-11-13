@@ -12,11 +12,13 @@ export function RespondControl({
   status,
   autoClosedNoResponse,
   onChanged,
+  canManage = true,
 }: {
   incidentId: string;
   status: string;
   autoClosedNoResponse: boolean;
   onChanged: () => void;
+  canManage?: boolean;
 }) {
   const [formOpen, setFormOpen] = useState(false);
   const [text, setText] = useState("");
@@ -34,6 +36,7 @@ export function RespondControl({
     }
     return null;
   }
+  if (!canManage) return null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

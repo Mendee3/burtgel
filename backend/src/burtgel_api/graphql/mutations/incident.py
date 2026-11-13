@@ -4,7 +4,7 @@ from strawberry.types import Info
 from burtgel_api.auth.sessions import now_utc
 from burtgel_api.db.models import Incident, IncidentCorrectiveAction, IncidentSeverityChange
 from burtgel_api.graphql.converters import to_incident_type
-from burtgel_api.graphql.require_login import require_login
+from burtgel_api.graphql.require_login import require_incident_manage
 from burtgel_api.graphql.types import MutationResult
 from burtgel_api.graphql.types.incident import IncidentInput, IncidentResult
 from burtgel_api.graphql.types.asset import ValidationError
@@ -32,7 +32,7 @@ def _actor_name(user) -> str:
 class IncidentMutation:
     @strawberry.mutation
     def create_incident(self, info: Info, input: IncidentInput) -> IncidentResult:
-        user = require_login(info)
+        user = require_incident_manage(info)
         _require_csrf(info)
         db = info.context.db
 
@@ -54,7 +54,7 @@ class IncidentMutation:
 
     @strawberry.mutation
     def update_incident(self, info: Info, id: strawberry.ID, input: IncidentInput) -> IncidentResult:
-        user = require_login(info)
+        user = require_incident_manage(info)
         _require_csrf(info)
         db = info.context.db
 
@@ -79,7 +79,7 @@ class IncidentMutation:
 
     @strawberry.mutation
     def delete_incident(self, info: Info, id: strawberry.ID) -> MutationResult:
-        user = require_login(info)
+        user = require_incident_manage(info)
         _require_csrf(info)
         db = info.context.db
 
@@ -95,7 +95,7 @@ class IncidentMutation:
 
     @strawberry.mutation
     def add_corrective_action(self, info: Info, incident_id: strawberry.ID, description: str) -> IncidentResult:
-        user = require_login(info)
+        user = require_incident_manage(info)
         _require_csrf(info)
         db = info.context.db
 
@@ -132,7 +132,7 @@ class IncidentMutation:
     def change_incident_severity(
         self, info: Info, incident_id: strawberry.ID, new_severity: str, reason: str
     ) -> IncidentResult:
-        user = require_login(info)
+        user = require_incident_manage(info)
         _require_csrf(info)
         db = info.context.db
 

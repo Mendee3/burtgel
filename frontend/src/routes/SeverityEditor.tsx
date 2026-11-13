@@ -15,11 +15,13 @@ export function SeverityEditor({
   currentSeverity,
   previousSeverity,
   onChanged,
+  canManage = true,
 }: {
   incidentId: string;
   currentSeverity: string;
   previousSeverity?: string;
   onChanged: () => void;
+  canManage?: boolean;
 }) {
   const [mode, setMode] = useState<"idle" | "selecting" | "confirming">("idle");
   const [pendingSeverity, setPendingSeverity] = useState("");
@@ -93,10 +95,12 @@ export function SeverityEditor({
               </option>
             ))}
           </select>
-        ) : (
+        ) : canManage ? (
           <button type="button" onClick={() => setMode("selecting")} title={mn.incidentChangeSeverity}>
             <SeverityBadge severity={currentSeverity} />
           </button>
+        ) : (
+          <SeverityBadge severity={currentSeverity} />
         )}
       </div>
 
