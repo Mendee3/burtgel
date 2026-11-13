@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тохиргоо | VulnReg</title>
+<link rel="icon" href="/favicon.ico" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/vulnreg.css">
+<style>
+.set-grid { display: flex; flex-direction: column; gap: 16px; max-width: 980px; }
+.set-card .sec-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 16px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.set-card h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.set-card .sec-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.set-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.set-foot { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--border); }
+.ro-note { padding: 10px 14px; border-radius: 10px; background: #EEF4FF; color: #1E3A8A; border: 1px solid #C9D8FB; font-size: 13px; }
+.sla-table { width: 100%; border-collapse: collapse; }
+.sla-table th { text-align: left; font-size: 12.5px; font-weight: 600; color: #334155; padding: 0 10px 8px; border-bottom: 1px solid var(--border-strong); }
+.sla-table td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: top; font-size: 13.5px; }
+.sla-table td:first-child, .sla-table th:first-child { padding-left: 0; }
+.sla-in { display: inline-flex; align-items: center; gap: 8px; }
+.sla-in input { width: 96px; }
+.sla-in .muted { white-space: nowrap; }
+.sla-range { padding-top: 10px; white-space: nowrap; }
+.fixed-val { display: inline-block; padding-top: 10px; color: var(--muted); }
+.cell-err { display: block; margin-top: 4px; }
+.recalc { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 14px 16px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+.recalc p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); max-width: 620px; }
+.recalc strong { font-size: 13.5px; }
+.inline-field { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.inline-field input { width: 96px; }
+.hist { width: 100%; border-collapse: collapse; }
+.hist th { text-align: left; font-size: 12.5px; font-weight: 600; color: #334155; padding: 8px 10px; background: #F1F4F8; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
+.hist td { padding: 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+.hist td.d { line-height: 1.5; overflow-wrap: anywhere; }
+.hist-wrap { overflow-x: auto; }
+.empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+.set-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; max-width: 980px; }
+.set-tabs a { padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 13px; font-weight: 600; }
+.set-tabs a:hover { border-color: var(--border-strong); }
+.set-tabs a[aria-selected="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+.set-card[hidden] { display: none; }
+.set-card { scroll-margin-top: 16px; }
+.form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 16px; }
+.form-grid .field.full { grid-column: 1 / -1; }
+.sub-h { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
+.hist.perm th.c, .hist.perm td.c { text-align: center; }
+.hist.perm input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--navy); }
+.hist select.input { min-width: 220px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.mx { border-collapse: separate; border-spacing: 3px; font-size: 12px; }
+.mx td { width: 30px; height: 22px; text-align: center; border-radius: 4px; font-weight: 600; color: #334155; }
+.mx-low { background: #DCFCE7; } .mx-medium { background: #FEF3C7; } .mx-high { background: #FEE2E2; }
+@media (max-width: 800px) { .form-grid { grid-template-columns: 1fr; } }
+@media (max-width: 600px) {
+  .sla-table thead { display: none; }
+  .sla-table tr { display: grid; grid-template-columns: 1fr; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .sla-table td { border: 0; padding: 4px 0; }
+  .sla-range { padding-top: 0; }
+  .hist th:nth-child(2), .hist td:nth-child(2) { display: none; }
+}
+.fd-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.fd-tabs button { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.fd-tabs button[aria-selected="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+.fd-dirty { padding: 8px 12px; border-radius: 8px; background: #FEF3C7; color: #92400E; border: 1px solid #FDE68A; font-size: 13px; }
+.fd-sec { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; background: var(--card); }
+.fd-sec-head { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; background: #F6F8FB; border-bottom: 1px solid var(--border); border-radius: 12px 12px 0 0; }
+.fd-num { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.fd-sec-title { flex: 1; min-width: 0; }
+.fd-sec-title b { display: block; font-size: 14px; }
+.fd-sec-title small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.fd-acts { display: flex; flex-wrap: wrap; gap: 4px; flex: none; }
+.fd-acts button { min-width: 30px; height: 30px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--card); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer; }
+.fd-acts button:hover:not(:disabled) { border-color: var(--border-strong); }
+.fd-acts button:disabled { opacity: .35; cursor: default; }
+.fd-acts button.danger { color: var(--warn-red); }
+.fd-fields { list-style: none; margin: 0; padding: 6px 14px; }
+.fd-field { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.fd-field:last-child { border-bottom: 0; }
+.fd-field.is-hidden .fd-f-main { opacity: .55; }
+.fd-f-main { flex: 1; min-width: 0; }
+.fd-f-main b { font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.fd-f-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 3px; font-size: 12px; color: var(--muted); }
+.fd-badge { padding: 1px 7px; border-radius: 999px; background: #EEF2F7; color: #334155; font-size: 11.5px; font-weight: 600; }
+.fd-badge.sys { background: #E0E7FF; color: #3730A3; }
+.fd-badge.hid { background: #FEE2E2; color: #991B1B; }
+.fd-empty { padding: 10px 0; color: var(--muted); font-size: 13px; }
+.fd-sec-foot { padding: 0 14px 12px; }
+.fd-check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.fd-check input { width: 16px; height: 16px; accent-color: var(--navy); }
+@media (max-width: 600px) { .fd-field { flex-wrap: wrap; } .fd-acts { width: 100%; } }
+  .role-chks { display:flex; flex-wrap:wrap; gap:.35rem .9rem; }
+  .role-chk { display:inline-flex; align-items:center; gap:.3rem; white-space:nowrap; font-size:.9em; cursor:pointer; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><path d="M12 9a4 4 0 0 1 4 4v3a4 4 0 0 1-8 0v-3a4 4 0 0 1 4-4z"/><path d="M9 7l1.5 2M15 7l-1.5 2M4 13h4M16 13h4M5 19l3-2M19 19l-3-2M5 8l3 2M19 8l-3 2"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 19h14"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></symbol>
+  <symbol id="i-sheet" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+</svg>
+
+<div class="shell collapsed" id="shell">
+  <aside class="sidebar" aria-label="Үндсэн цэс">
+    <a class="sb-brand" href="/registry/vulnerabilities" aria-label="VulnReg — Эмзэг байдлын бүртгэл">
+      <span class="sb-logo"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg></span>
+      <span class="sb-brand-text"><strong>VulnReg</strong><span>Эмзэг байдлын бүртгэл</span></span>
+    </a>
+    <nav class="sb-nav">{{SIDEBAR}}</nav>
+    <div class="sb-foot">
+      <div class="sb-user" data-tip="{{USER_NAME}} · {{USER_ROLE}}" tabindex="-1">
+        <span class="sb-avatar" aria-hidden="true">{{USER_INITIALS}}</span>
+        <span class="sb-user-text"><strong>{{USER_NAME}}</strong><span>{{USER_ROLE}}</span></span>
+      </div>
+      <a class="sb-btn" href="/dashboard" data-tip="МАБ Платформ руу буцах" aria-label="МАБ Платформ руу буцах"><svg class="ico" aria-hidden="true"><use href="#i-back"/></svg><span class="sb-btn-text">МАБ Платформ руу буцах</span></a>
+    </div>
+  </aside>
+
+  <main class="content" id="main">
+    <header class="topbar">
+      <div class="page-head">
+        <h1>Тохиргоо</h1>
+        <p>Эрх олгох, хандах эрх, орлон гүйцэтгэгч, эрсдэлийн матриц, маягтын бүтэц, засварлах хугацаа (SLA). Зөвхөн админ (InfoSec) харж, өөрчилнө. Өөрчлөлт бүрийн шалтгаан аудитын түүхэнд хадгалагдана.</p>
+      </div>
+    </header>
+
+    <nav class="set-tabs" role="tablist" aria-label="Тохиргооны хэсгүүд">
+      <a href="#roles" role="tab" id="tab-roles" aria-controls="roles" aria-selected="false">Эрхтэй хэрэглэгчид</a><a href="#access" role="tab" id="tab-access" aria-controls="access" aria-selected="false">Хандах эрх</a><a href="#subs" role="tab" id="tab-subs" aria-controls="subs" aria-selected="false">Орлон гүйцэтгэгч</a><a href="#risk" role="tab" id="tab-risk" aria-controls="risk" aria-selected="false">Эрсдэлийн матриц</a><a href="#forms" role="tab" id="tab-forms" aria-controls="forms" aria-selected="false">Маягтын бүтэц</a><a href="#sla" role="tab" id="tab-sla" aria-controls="sla" aria-selected="false">SLA</a><a href="#hist" role="tab" id="tab-hist" aria-controls="hist" aria-selected="false">Аудит</a>
+    </nav>
+
+    <div class="set-grid">
+      <section class="card set-card" id="roles" role="tabpanel" hidden aria-labelledby="h-roles">
+        <div class="sec-head">
+          <div><h2 id="h-roles">Эрхтэй хэрэглэгчид</h2>
+          <p>InfoSec (админ — бүртгэх, эрсдэл үнэлэх, баталгаажуулах, тохиргоо), IT-ийн дарга (хянах, инженер томилох), Инженер (үнэлгээ, засвар), CTO (эрсдэл хүлээн зөвшөөрөх).
+          Бүх эрхийг нэг газраас — <a href="/users">Хэрэглэгчид</a> хуудасны «Засах» хэсгээс олгож, хасна.</p></div>
+        </div>
+        <div class="set-body">
+          <div class="inline-field"><input type="search" class="input" id="role-q" placeholder="Нэр, и-мэйл, хэлтсээр хайх…" aria-label="Хэрэглэгч хайх" style="width:min(360px,100%)">
+            <select class="input" id="role-filter" aria-label="Эрхээр шүүх" style="width:auto"><option value="">Бүх эрх</option></select></div>
+          <div class="hist-wrap"><table class="hist">
+            <thead><tr><th scope="col">Хэрэглэгч</th><th scope="col">Хэлтэс</th><th scope="col">Эрх (үүрэг)</th></tr></thead>
+            <tbody id="role-rows"><tr><td colspan="3"><span class="sk" style="width:60%"></span></td></tr></tbody>
+          </table></div>
+          <p class="muted" style="margin:0;font-size:12.5px">Супер админ бүх үүргийг гүйцэтгэх боломжтой. Эрх өөрчлөхөд шалтгаан асууна.</p>
+        </div>
+      </section>
+
+      <section class="card set-card" id="access" role="tabpanel" hidden aria-labelledby="h-access">
+        <div class="sec-head">
+          <div><h2 id="h-access">Хандах эрх</h2>
+          <p>Үүрэг бүрийн Эмзэг байдлын бүртгэл рүү хандах эрх. Эрхгүй хэрэглэгчид цэс харагдахгүй бөгөөд сервер талд хандалтыг хориглоно.</p></div>
+        </div>
+        <form id="perm-form" novalidate>
+          <div class="set-body">
+            <div class="hist-wrap"><table class="hist perm">
+              <thead><tr id="perm-head"></tr></thead>
+              <tbody id="perm-rows"></tbody>
+            </table></div>
+            <p class="muted" style="margin:0;font-size:12.5px">«Бүх бүртгэлийг харах» эрхгүй бол зөвхөн өөрт томилогдсон, өөрийн бүртгэсэн болон өөрийн шийдвэр шаардсан бүртгэлийг харна. InfoSec-ийн үндсэн эрхийг хаах боломжгүй.</p>
+            <div class="field"><label for="perm-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="perm-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
+            <div class="m-alert" id="perm-alert" role="alert"></div>
+          </div>
+          <div class="set-foot"><button type="submit" class="btn-primary" id="perm-save">Хадгалах</button></div>
+        </form>
+      </section>
+
+      <section class="card set-card" id="subs" role="tabpanel" hidden aria-labelledby="h-subs">
+        <div class="sec-head">
+          <div><h2 id="h-subs">Орлон гүйцэтгэгч</h2>
+          <p>CTO эсвэл IT-ийн дарга чөлөө авсан, байхгүй үед батлах, томилох үүргийг хэн гүйцэтгэхийг заана. Хугацааны турш орлон гүйцэтгэгч тухайн үүргийн эрх, мэдэгдлийг авна.</p></div>
+        </div>
+        <div class="set-body">
+          <div class="hist-wrap"><table class="hist">
+            <thead><tr><th scope="col">Үүрэг</th><th scope="col">Орлуулагдах</th><th scope="col">Орлон гүйцэтгэгч</th><th scope="col">Хугацаа</th><th scope="col"><span class="sr-only">Үйлдэл</span></th></tr></thead>
+            <tbody id="sub-rows"></tbody>
+          </table></div>
+          <div class="empty" id="sub-empty" hidden>Идэвхтэй болон товлогдсон орлох томилгоо алга.</div>
+        </div>
+        <form id="sub-form" novalidate>
+          <div class="set-body" style="padding-top:0">
+            <h3 class="sub-h">Шинэ томилгоо</h3>
+            <div class="form-grid">
+              <div class="field"><label for="sub-role">Үүрэг<span class="req">*</span></label><select id="sub-role" name="role"><option value="it_head">IT-ийн дарга (IT Head)</option><option value="cto">CTO</option></select><span class="err-msg" data-err="role"></span></div>
+              <div class="field"><label for="sub-principal">Орлуулагдах ажилтан<span class="req">*</span></label><select id="sub-principal" name="principal_id"></select><span class="err-msg" data-err="principal_id"></span></div>
+              <div class="field"><label for="sub-sub">Орлон гүйцэтгэгч<span class="req">*</span></label><select id="sub-sub" name="substitute_id"></select><span class="err-msg" data-err="substitute_id"></span></div>
+              <div class="field"><label for="sub-start">Эхлэх огноо<span class="req">*</span></label><input type="date" id="sub-start" name="start_date"><span class="err-msg" data-err="start_date"></span></div>
+              <div class="field"><label for="sub-end">Дуусах огноо<span class="req">*</span></label><input type="date" id="sub-end" name="end_date"><span class="err-msg" data-err="end_date"></span></div>
+              <div class="field"><label for="sub-note">Тайлбар</label><input type="text" id="sub-note" name="note" maxlength="500" placeholder="Ээлжийн амралт, томилолт…"></div>
+              <div class="field full"><label for="sub-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="sub-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
+            </div>
+            <div class="m-alert" id="sub-alert" role="alert"></div>
+          </div>
+          <div class="set-foot"><button type="submit" class="btn-primary" id="sub-save">Томилох</button></div>
+        </form>
+      </section>
+
+      <section class="card set-card" id="risk" role="tabpanel" hidden aria-labelledby="h-risk">
+        <div class="sec-head">
+          <div><h2 id="h-risk">Эрсдэлийн матриц (MAS-14)</h2>
+          <p>Нөлөөллийн 8 шалгуур (тус бүр 1–5), магадлал (1–5). Нөлөөлөл = шалгууруудын хамгийн өндөр утга; эрсдэл = нөлөөлөл × магадлал (5×5).</p></div>
+        </div>
+        <form id="risk-form" novalidate>
+          <div class="set-body">
+            <div class="form-grid" id="crit-fields"></div>
+            <div class="form-grid">
+              <div class="field"><label for="low_max">Бага (Low): оноо ≤</label><input type="number" id="low_max" name="low_max" min="1" max="23" step="1"><span class="err-msg" data-err="low_max"></span></div>
+              <div class="field"><label for="medium_max">Дунд (Medium): оноо ≤</label><input type="number" id="medium_max" name="medium_max" min="2" max="24" step="1"><span class="hint">Үүнээс их бол Өндөр (High).</span><span class="err-msg" data-err="medium_max"></span></div>
+              <div class="field"><span class="label">Урьдчилан харах</span><div id="mx-preview"></div></div>
+            </div>
+            <div class="field"><label for="risk-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="risk-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
+            <div class="m-alert" id="risk-alert" role="alert"></div>
+          </div>
+          <div class="set-foot">
+            <button type="button" class="btn-ghost" id="risk-reset">Анхны утга сэргээх</button>
+            <button type="submit" class="btn-primary" id="risk-save">Хадгалах</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card set-card" id="forms" role="tabpanel" hidden aria-labelledby="h-forms">
+        <div class="sec-head">
+          <div><h2 id="h-forms">Маягтын бүтэц</h2>
+          <p>Эмзэг байдал бүртгэх, Хөрөнгө ба хариуцлага / Үнэлгээ (Инженер), Эрсдэлийн үнэлгээ (MAS-14) маягтын хэсэг (карт), талбар, дарааллыг удирдана.
+          <b>Системийн</b> талбарууд ажлын урсгалд ашиглагддаг тул нэр, тайлбар, байрлалыг нь өөрчилж, шаардлагагүй бол нууж болно — устгах боломжгүй. Нэмэлт талбарыг бүрэн удирдана; устгасан талбарын өмнө оруулсан утга бүртгэлд хадгалагдана.</p></div>
+        </div>
+        <div class="set-body">
+          <div class="fd-tabs" role="tablist" aria-label="Маягт сонгох" id="fd-tabs"></div>
+          <div class="fd-dirty" id="fd-dirty" hidden>Хадгалаагүй өөрчлөлт байна.</div>
+          <div id="fd-editor"></div>
+          <div><button type="button" class="btn-secondary" id="fd-add-sec"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Хэсэг (карт) нэмэх</button></div>
+          <form id="fd-form" novalidate>
+            <div class="field"><label for="fd-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="fd-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
+            <div class="m-alert" id="fd-alert" role="alert"></div>
+          </form>
+        </div>
+        <div class="set-foot">
+          <button type="button" class="btn-ghost" id="fd-reset">Анхны бүтэц сэргээх</button>
+          <button type="button" class="btn-ghost" id="fd-discard">Өөрчлөлтийг цуцлах</button>
+          <button type="button" class="btn-primary" id="fd-save">Хадгалах</button>
+        </div>
+      </section>
+
+      <section class="card set-card" id="sla" role="tabpanel" hidden aria-labelledby="h-sla">
+        <div class="sec-head">
+          <div><h2 id="h-sla">Засварлах хугацаа (SLA)</h2>
+          <p>CVSS онооны хүрээгээр түвшин тогтоож, бүртгэсэн (мэдээлсэн) огнооноос хэдэн хоногийн дотор засварлахыг тодорхойлно. Эрсдэлийн үнэлгээний хугацаа (Critical 1, High 3, бусад 5 ажлын өдөр) SLA-г зогсоохгүй.</p></div>
+        </div>
+        <form id="sla-form" novalidate>
+          <div class="set-body">
+            <table class="sla-table">
+              <thead><tr><th scope="col">Түвшин</th><th scope="col">CVSS доод хязгаар</th><th scope="col">CVSS хүрээ</th><th scope="col">Засварлах хугацаа</th></tr></thead>
+              <tbody id="sla-rows"><tr><td colspan="4"><span class="sk" style="width:60%"></span></td></tr></tbody>
+            </table>
+            <p class="muted" style="margin:0;font-size:12.5px">Өөрчлөлт зөвхөн <b>шинээр бүртгэх</b> болон CVSS оноо нь өөрчлөгдсөн бүртгэлд хэрэгжинэ. Одоо байгаа нээлттэй бүртгэлүүдэд хэрэглэх бол доорх «Дахин тооцоолох»-ыг ашиглана уу. CVSS 0.0 = None (хугацаагүй).</p>
+            <div class="field"><label for="sla-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="sla-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
+            <div class="m-alert" id="sla-alert" role="alert"></div>
+          </div>
+          <div class="set-foot">
+            <button type="button" class="btn-ghost" id="sla-reset">Анхны утга сэргээх</button>
+            <button type="submit" class="btn-primary" id="sla-save">Хадгалах</button>
+          </div>
+        </form>
+        <div class="set-body" style="padding-top:0">
+          <div class="recalc">
+            <div><strong>Нээлттэй бүртгэлүүдийг дахин тооцоолох</strong>
+            <p>Хадгалсан SLA-ийн дагуу нээлттэй бүртгэлүүдийн түвшин, засварлах хугацааг шинэчилнэ. Гараар оруулсан засварлах хугацааг өөрчлөхгүй. Өөрчлөлт бүр бүртгэлийн түүхэнд хадгалагдана.</p></div>
+            <button type="button" class="btn-secondary" id="recalc-btn"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Дахин тооцоолох</button>
+          </div>
+        </div>
+        <form id="dl-form" novalidate>
+          <div class="set-body" style="border-top:1px solid var(--border)">
+            <div class="field">
+              <label for="due_soon_days">«Хугацаа дөхсөн» сануулгын босго</label>
+              <div class="inline-field"><input type="number" id="due_soon_days" name="due_soon_days" min="0" max="90" step="1" inputmode="numeric" required><span class="muted">хоног (0–90)</span></div>
+              <span class="hint" id="dl-hint"></span>
+              <span class="err-msg" data-err="due_soon_days"></span>
+            </div>
+            <div class="field"><label for="dl-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="dl-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
+            <div class="m-alert" id="dl-alert" role="alert"></div>
+          </div>
+          <div class="set-foot">
+            <button type="button" class="btn-ghost" id="dl-reset">Анхны утга сэргээх</button>
+            <button type="submit" class="btn-primary" id="dl-save">Хадгалах</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card set-card" id="hist" role="tabpanel" hidden aria-labelledby="h-hist">
+        <div class="sec-head">
+          <div><h2 id="h-hist">Тохиргооны аудитын түүх</h2>
+          <p>Хэн, хэзээ, ямар тохиргоог, өмнөх ба шинэ утга, шалтгаан. Сүүлийн 100 өөрчлөлт; засах, устгах боломжгүй.</p></div>
+        </div>
+        <div class="set-body">
+          <div class="hist-wrap"><table class="hist">
+            <thead><tr><th scope="col">Огноо</th><th scope="col">Хэрэглэгч</th><th scope="col">Тохиргоо</th><th scope="col">Өмнөх утга</th><th scope="col">Шинэ утга</th><th scope="col">Шалтгаан</th></tr></thead>
+            <tbody id="hist-rows"></tbody>
+          </table></div>
+          <div class="empty" id="hist-empty" hidden>Өөрчлөлт хийгдээгүй байна.</div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>window.VR_BOOT = {{BOOT_JSON}};</script>
+<script src="/static/vulnreg.js"></script>
+<script>
+(function () {
+  "use strict";
+  VR.initShell();
+  // ---- Section tabs: one settings section visible at a time (hash-addressable) ----
+  (function () {
+    var tabs = Array.prototype.slice.call(document.querySelectorAll(".set-tabs [role=tab]"));
+    var keys = tabs.map(function (t) { return t.getAttribute("aria-controls"); });
+    function show(key) {
+      if (keys.indexOf(key) < 0) key = keys[0];
+      tabs.forEach(function (t) {
+        var k = t.getAttribute("aria-controls"), on = k === key;
+        t.setAttribute("aria-selected", on ? "true" : "false");
+        t.tabIndex = on ? 0 : -1;
+        document.getElementById(k).hidden = !on;
+      });
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener("click", function (e) {
+        e.preventDefault();
+        var k = t.getAttribute("aria-controls");
+        try { history.replaceState(null, "", "#" + k); } catch (err) {}
+        show(k);
+      });
+      t.addEventListener("keydown", function (e) {
+        var d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        var n = tabs[(i + d + tabs.length) % tabs.length];
+        n.focus(); n.click();
+      });
+    });
+    window.addEventListener("hashchange", function () { show(location.hash.slice(1)); });
+    show(location.hash.slice(1));
+  })();
+  var esc = VR.esc, API = VR.BASE + "/api/settings";
+  var LEVELS = ["critical", "high", "medium", "low"];
+  var LABEL = { critical: "Critical", high: "High", medium: "Medium", low: "Low" };
+  var S = null;
+  var $ = function (id) { return document.getElementById(id); };
+  var slaForm = $("sla-form"), dlForm = $("dl-form"), permForm = $("perm-form"), subForm = $("sub-form"), riskForm = $("risk-form");
+
+  function fdIsDirtySafe() { try { return fdIsDirty(); } catch (e) { return false; } }
+  function busy(btn, on) { btn.disabled = on; btn.setAttribute("aria-busy", on ? "true" : "false"); }
+  function reload() {
+    return VR.api(API).then(function (r) {
+      if (!r.ok) {
+        document.querySelector(".set-grid").innerHTML = '<div class="card"><div class="state err"><h3>Тохиргоо ачаалж чадсангүй</h3><p>' + esc(r.data.error || "") + "</p></div></div>";
+        return;
+      }
+      S = r.data;
+      VR.boot.forms = S.forms;
+      renderForms(fdIsDirtySafe());
+      renderRoles(); renderPerms(S.perms); renderSubs(); renderRisk(S.risk); renderSla(S.sla); renderDeadline(S.dueSoonDays); renderHistory(S.history);
+    });
+  }
+  /* Generic section save: posts the form + section, shows field errors, clears the reason on success. */
+  function saveSection(form, section, extra, alertId, btnId, after) {
+    var alertBox = $(alertId); alertBox.textContent = "";
+    var data = { section: section };
+    Array.prototype.forEach.call(form.querySelectorAll("[name]"), function (n) {
+      if (n.type === "checkbox") { if (n.checked) data[n.name] = "1"; }
+      else data[n.name] = n.value;
+    });
+    Object.keys(extra || {}).forEach(function (k) { data[k] = extra[k]; });
+    if (!(data.reason || "").trim()) { VR.setErrors(form, { reason: "Өөрчлөлтийн шалтгааныг заавал бичнэ үү." }); alertBox.textContent = "Шалтгаан бичнэ үү."; return; }
+    VR.setErrors(form, {});
+    var btn = $(btnId); busy(btn, true);
+    VR.api(API, { form: data }).then(function (r) {
+      busy(btn, false);
+      if (!r.ok) {
+        if (r.data.fields) VR.setErrors(form, r.data.fields);
+        alertBox.textContent = r.data.error || "Хадгалж чадсангүй.";
+        return;
+      }
+      var rs = form.querySelector('[name="reason"]'); if (rs) rs.value = "";
+      VR.toast(r.data.message, "ok");
+      if (after) after(r.data);
+      reload();
+    });
+  }
+  /* Modal that insists on a reason before resolving. */
+  function askReason(title, body) {
+    return new Promise(function (resolve) {
+      var dlg = document.createElement("dialog");
+      dlg.className = "modal narrow";
+      dlg.setAttribute("aria-labelledby", "rs-title");
+      dlg.innerHTML = '<form novalidate><div class="m-head"><div><h2 id="rs-title">' + esc(title) + "</h2></div></div>" +
+        '<div class="m-body"><p style="margin:0">' + body + "</p>" +
+        '<div class="field"><label for="rs-text">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="rs-text" rows="3" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div></div>' +
+        '<div class="m-foot"><button type="button" class="btn-secondary" data-no>Болих</button><button type="submit" class="btn-primary">Батлах</button></div></form>';
+      var result = null;
+      dlg.querySelector("[data-no]").addEventListener("click", function () { dlg.close(); });
+      dlg.querySelector("form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var v = dlg.querySelector("#rs-text").value.trim();
+        if (!v) { VR.setErrors(dlg, { reason: "Шалтгаан заавал бичнэ." }); return; }
+        result = v; dlg.close();
+      });
+      dlg.addEventListener("close", function () { dlg.remove(); resolve(result); });
+      VR.showModal(dlg, dlg.querySelector("#rs-text"));
+    });
+  }
+
+  // ---- Roles ----
+  function roleLabel(k) { var r = S.roles.filter(function (x) { return x.key === k; })[0]; return r ? r.label : "Хандах эрхгүй"; }
+  var VR_BOOT_ROLE = (window.VR_BOOT || {}).role;
+  function rolesText(list) { return list.length ? list.map(roleLabel).join(", ") : "Хандах эрхгүй"; }
+  function renderRoles() {
+    var q = $("role-q").value.trim().toLowerCase(), f = $("role-filter").value;
+    var sel = $("role-filter");
+    if (sel.options.length === 1) S.roles.forEach(function (r) { sel.add(new Option(r.label, r.key)); });
+    // Only users who have been granted at least one VulnReg role are listed here.
+    var rows = S.users.filter(function (u) {
+      if (!u.roles.length) return false;
+      if (f && u.roles.indexOf(f) < 0) return false;
+      return !q || (u.name + " " + u.email + " " + u.dept).toLowerCase().indexOf(q) >= 0;
+    });
+    $("role-rows").innerHTML = rows.length ? rows.map(function (u) {
+      var checks = esc(rolesText(u.roles)) + (VR_BOOT_ROLE === "superadmin"
+        ? ' <a class="btn-ghost btn-sm" href="/users/' + u.id + '/edit">Засах</a>' : "");
+      return "<tr><td><b>" + esc(u.name) + "</b>" + (u.superadmin ? ' <span class="pill sev-none">Супер админ</span>' : "") + '<br><small class="muted">' + esc(u.email) + "</small></td>" +
+        "<td>" + esc(u.dept || "—") + '</td><td><div class="role-chks">' + checks + "</div></td></tr>";
+    }).join("") : '<tr><td colspan="3" class="empty">Эрхтэй хэрэглэгч олдсонгүй.</td></tr>';
+  }
+  $("role-q").addEventListener("input", function () { if (S) renderRoles(); });
+  $("role-filter").addEventListener("change", function () { if (S) renderRoles(); });
+  // ---- Access permissions ----
+  function renderPerms(perms) {
+    var locked = {}; S.permsLocked.forEach(function (x) { locked[x[0] + "__" + x[1]] = true; });
+    $("perm-head").innerHTML = '<th scope="col">Үүрэг</th>' + S.permKeys.map(function (p) { return '<th scope="col" class="c">' + esc(p.label) + "</th>"; }).join("");
+    $("perm-rows").innerHTML = S.roles.map(function (r) {
+      return '<tr><th scope="row">' + esc(r.label) + "</th>" + S.permKeys.map(function (p) {
+        var k = r.key + "__" + p.key;
+        return '<td class="c"><input type="checkbox" name="' + k + '" value="1" aria-label="' + esc(r.label + " — " + p.label) + '"' +
+          (perms[r.key][p.key] ? " checked" : "") + (locked[k] ? ' disabled title="Түгжигдсэн"' : "") + "></td>";
+      }).join("") + "</tr>";
+    }).join("");
+  }
+  permForm.addEventListener("submit", function (e) { e.preventDefault(); saveSection(permForm, "perms", {}, "perm-alert", "perm-save"); });
+
+  // ---- Substitutes ----
+  function renderSubs() {
+    $("sub-empty").hidden = S.substitutes.length > 0;
+    $("sub-rows").innerHTML = S.substitutes.map(function (s) {
+      return "<tr><td>" + esc(s.roleLabel) + "</td><td>" + esc(s.principal) + "</td><td><b>" + esc(s.substitute) + "</b>" + (s.note ? '<br><small class="muted">' + esc(s.note) + "</small>" : "") + "</td>" +
+        '<td class="mono">' + esc(s.start) + " – " + esc(s.end) + (s.active ? ' <span class="pill sev-low">Идэвхтэй</span>' : ' <span class="pill sev-none">Товлогдсон</span>') + "</td>" +
+        '<td><button type="button" class="btn-ghost btn-sm" data-revoke="' + s.id + '">Цуцлах</button></td></tr>';
+    }).join("");
+    var role = $("sub-role").value;
+    var holders = S.users.filter(function (u) { return u.roles.indexOf(role) >= 0; });
+    $("sub-principal").innerHTML = (holders.length ? "" : '<option value="">— Энэ үүрэгтэй хэрэглэгч алга —</option>') +
+      holders.map(function (u) { return '<option value="' + u.id + '">' + esc(u.name) + "</option>"; }).join("");
+    $("sub-sub").innerHTML = '<option value="">— Сонгох —</option>' + S.users.map(function (u) {
+      return '<option value="' + u.id + '">' + esc(u.name) + (u.roles.length ? " · " + esc(rolesText(u.roles)) : "") + "</option>";
+    }).join("");
+    if (!$("sub-start").value) $("sub-start").value = VR.todayIso;
+    $("sub-start").min = VR.todayIso; $("sub-end").min = VR.todayIso;
+  }
+  $("sub-role").addEventListener("change", function () { if (S) renderSubs(); });
+  subForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    saveSection(subForm, "substitute_add", {}, "sub-alert", "sub-save", function () { $("sub-note").value = ""; $("sub-end").value = ""; });
+  });
+  $("sub-rows").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-revoke]"); if (!b) return;
+    var s = S.substitutes.filter(function (x) { return String(x.id) === b.getAttribute("data-revoke"); })[0];
+    askReason("Орлох томилгоо цуцлах", esc(s.roleLabel) + ": " + esc(s.principal) + " → <b>" + esc(s.substitute) + "</b>, " + esc(s.start) + " – " + esc(s.end)).then(function (reason) {
+      if (!reason) return;
+      VR.api(API, { form: { section: "substitute_revoke", id: s.id, reason: reason } }).then(function (r) {
+        if (!r.ok) { VR.toast(r.data.error || "Алдаа гарлаа.", "err"); return; }
+        VR.toast(r.data.message, "ok"); reload();
+      });
+    });
+  });
+
+  // ---- Risk matrix ----
+  function renderRisk(cfg) {
+    $("crit-fields").innerHTML = cfg.criteria.map(function (c, i) {
+      return '<div class="field"><label for="crit-' + (i + 1) + '">Шалгуур ' + (i + 1) + '<span class="req">*</span></label><input type="text" id="crit-' + (i + 1) + '" name="criterion_' + (i + 1) +
+        '" maxlength="120" value="' + esc(c) + '"><span class="err-msg" data-err="criterion_' + (i + 1) + '"></span></div>';
+    }).join("");
+    $("low_max").value = cfg.low_max; $("medium_max").value = cfg.medium_max;
+    preview();
+  }
+  function preview() {
+    var lo = +$("low_max").value, med = +$("medium_max").value, rows = "";
+    for (var l = 5; l >= 1; l--) {
+      rows += "<tr>";
+      for (var i = 1; i <= 5; i++) { var sc = i * l; rows += '<td class="mx-' + (sc <= lo ? "low" : (sc <= med ? "medium" : "high")) + '">' + sc + "</td>"; }
+      rows += "</tr>";
+    }
+    $("mx-preview").innerHTML = '<table class="mx" aria-label="5×5 матриц"><tbody>' + rows + "</tbody></table>";
+  }
+  riskForm.addEventListener("input", preview);
+  riskForm.addEventListener("submit", function (e) { e.preventDefault(); saveSection(riskForm, "risk", {}, "risk-alert", "risk-save"); });
+  $("risk-reset").addEventListener("click", function () { renderRisk(S.riskDefault); VR.toast("Анхны утгыг бөглөлөө. Шалтгаан бичээд хадгална уу."); });
+
+  // ---- Form designer (Маягтын бүтэц) ----
+  var FD_FORMS = [["register", "Эмзэг байдал бүртгэх"], ["engineer", "Хөрөнгө ба хариуцлага · Үнэлгээ (Инженер)"], ["risk", "Эрсдэлийн үнэлгээ (MAS-14)"]];
+  var fdKey = "register", fdDraft = null, fdFlags = {};
+  function fdRand(n) { var a = "abcdefghijklmnopqrstuvwxyz0123456789", o = ""; for (var i = 0; i < n; i++) o += a.charAt(Math.floor(Math.random() * a.length)); return o; }
+  function fdClone(x) { return JSON.parse(JSON.stringify(x)); }
+  /* Stored shape only (what the server keeps); flags such as core/lockReq always come from the server. */
+  function fdStrip(form) {
+    return { sections: form.sections.map(function (s) {
+      return { id: s.id, title: s.title, desc: s.desc || "", fields: s.fields.map(function (f) {
+        var o = { key: f.key, label: f.label, required: !!f.required, hidden: !!f.hidden, hint: f.hint || "", ph: f.ph || "", full: !!f.full };
+        if (!f.builtin) { o.type = f.type; if (f.options) o.options = f.options; if (f.max) o.max = f.max; }
+        return o;
+      }) };
+    }) };
+  }
+  function fdIsDirty() { return !!fdDraft && JSON.stringify(fdStrip(fdDraft)) !== JSON.stringify(fdStrip(S.forms[fdKey])); }
+  function fdTypeLabel(t) { var x = S.customTypes.filter(function (c) { return c.key === t; })[0]; return x ? x.label : t; }
+  function fdAnnotate(form) {
+    form.sections.forEach(function (s) { s.fields.forEach(function (f) {
+      var b = fdFlags[f.key];
+      if (b) { f.builtin = true; f.core = b.core; f.lockReq = b.lockReq; f.block = b.block; f.type = b.type; f.typeLabel = b.typeLabel; }
+      else { f.builtin = false; f.core = f.lockReq = f.block = false; f.typeLabel = fdTypeLabel(f.type); }
+    }); });
+    return form;
+  }
+  function renderForms(keepDraft) {
+    fdFlags = {};
+    S.forms[fdKey].sections.forEach(function (s) { s.fields.forEach(function (f) { if (f.builtin) fdFlags[f.key] = f; }); });
+    if (!keepDraft || !fdDraft) fdDraft = fdClone(S.forms[fdKey]);
+    $("fd-tabs").innerHTML = FD_FORMS.map(function (x) {
+      return '<button type="button" role="tab" data-form="' + x[0] + '" aria-selected="' + (x[0] === fdKey) + '">' + esc(x[1]) + "</button>";
+    }).join("");
+    fdRender();
+  }
+  function fdBtn(act, label, text, disabled, cls) {
+    return '<button type="button" data-fd="' + act + '" aria-label="' + esc(label) + '" title="' + esc(label) + '"' + (cls ? ' class="' + cls + '"' : "") + (disabled ? " disabled" : "") + ">" + text + "</button>";
+  }
+  function fdRender() {
+    var secs = fdDraft.sections;
+    $("fd-dirty").hidden = !fdIsDirty();
+    $("fd-editor").innerHTML = secs.map(function (s, si) {
+      var fields = s.fields.map(function (f, fi) {
+        var first = si === 0 && fi === 0, last = si === secs.length - 1 && fi === s.fields.length - 1;
+        var meta = '<span>' + esc(f.typeLabel || "") + "</span>" +
+          (f.builtin ? '<span class="fd-badge sys">Системийн</span>' : '<span class="fd-badge">Нэмэлт</span>') +
+          (f.required ? '<span class="fd-badge">Заавал</span>' : "") + (f.hidden ? '<span class="fd-badge hid">Нуусан</span>' : "") +
+          (!f.full && !f.block ? '<span class="fd-badge">Хагас өргөн</span>' : "") +
+          (f.options ? "<span>" + esc(f.options.join(" / ")) + "</span>" : "");
+        var vis = f.builtin
+          ? (f.core ? "" : fdBtn("toggle", (f.hidden ? "Харуулах: " : "Нуух: ") + f.label, f.hidden ? "Харуулах" : "Нуух"))
+          : fdBtn("delfield", "Устгах: " + f.label, "Устгах", false, "danger");
+        return '<li class="fd-field' + (f.hidden ? " is-hidden" : "") + '" data-s="' + si + '" data-f="' + fi + '"><div class="fd-f-main"><b>' + esc(f.label) + "</b>" +
+          (f.required ? '<span class="req">*</span>' : "") + '<div class="fd-f-meta">' + meta + "</div></div>" +
+          '<div class="fd-acts">' + fdBtn("fup", "Дээш зөөх: " + f.label, "↑", first) + fdBtn("fdown", "Доош зөөх: " + f.label, "↓", last) +
+          fdBtn("editfield", "Засах: " + f.label, "Засах") + vis + "</div></li>";
+      }).join("");
+      return '<div class="fd-sec" data-s="' + si + '"><div class="fd-sec-head"><span class="fd-num" aria-hidden="true">' + (si + 1) + '</span>' +
+        '<div class="fd-sec-title"><b>' + esc(s.title) + "</b>" + (s.desc ? "<small>" + esc(s.desc) + "</small>" : "") + "</div>" +
+        '<div class="fd-acts">' + fdBtn("sup", "Хэсгийг дээш: " + s.title, "↑", si === 0) + fdBtn("sdown", "Хэсгийг доош: " + s.title, "↓", si === secs.length - 1) +
+        fdBtn("editsec", "Хэсэг засах: " + s.title, "Засах") + fdBtn("delsec", "Хэсэг устгах: " + s.title, "Устгах", false, "danger") + "</div></div>" +
+        '<ul class="fd-fields">' + (fields || '<li class="fd-empty">Талбаргүй хэсэг.</li>') + "</ul>" +
+        '<div class="fd-sec-foot"><button type="button" class="btn-ghost btn-sm" data-fd="addfield"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Талбар нэмэх</button></div></div>';
+    }).join("");
+  }
+  function fdMoveField(si, fi, dir) {
+    var secs = fdDraft.sections, f = secs[si].fields[fi];
+    if (dir < 0 && fi > 0) { secs[si].fields.splice(fi, 1); secs[si].fields.splice(fi - 1, 0, f); }
+    else if (dir > 0 && fi < secs[si].fields.length - 1) { secs[si].fields.splice(fi, 1); secs[si].fields.splice(fi + 1, 0, f); }
+    else if (dir < 0 && si > 0) { secs[si].fields.splice(fi, 1); secs[si - 1].fields.push(f); }        // into the previous section
+    else if (dir > 0 && si < secs.length - 1) { secs[si].fields.splice(fi, 1); secs[si + 1].fields.unshift(f); } // into the next section
+  }
+  /* Modal with a form body; resolves with the dialog's form on OK (validate returns errors or null). */
+  function fdDialog(title, bodyHtml, validate) {
+    return new Promise(function (resolve) {
+      var dlg = document.createElement("dialog");
+      dlg.className = "modal narrow";
+      dlg.setAttribute("aria-labelledby", "fdm-title");
+      dlg.innerHTML = '<form novalidate><div class="m-head"><div><h2 id="fdm-title">' + esc(title) + "</h2></div>" +
+        '<button type="button" class="icon-btn" data-close aria-label="Хаах"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>' +
+        '<div class="m-body">' + bodyHtml + '</div><div class="m-foot"><button type="button" class="btn-secondary" data-close>Болих</button>' +
+        '<button type="submit" class="btn-primary">Болох</button></div></form>';
+      var form = dlg.querySelector("form"), ok = null;
+      Array.prototype.forEach.call(dlg.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { dlg.close(); }); });
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var errs = validate ? validate(form) : null;
+        VR.setErrors(form, errs || {});
+        if (errs) {
+          var bad = form.querySelector("#" + Object.keys(errs)[0]);
+          if (bad) { bad.setAttribute("aria-invalid", "true"); bad.focus(); }
+          return;
+        }
+        ok = form; dlg.close();
+      });
+      dlg.addEventListener("close", function () { resolve(ok); setTimeout(function () { dlg.remove(); }, 0); });
+      form.addEventListener("change", function () { if (form._sync) form._sync(); });
+      fdDialog.last = form;  // read synchronously by the caller to attach live behaviour (form._sync)
+      VR.showModal(dlg, form.querySelector("input, select, textarea"));
+    });
+  }
+  function fdIn(id, label, value, opts) {
+    opts = opts || {};
+    var input = opts.textarea
+      ? '<textarea id="' + id + '" rows="' + (opts.rows || 2) + '" maxlength="' + (opts.max || 300) + '">' + esc(value || "") + "</textarea>"
+      : '<input id="' + id + '" type="' + (opts.type || "text") + '" maxlength="' + (opts.max || 200) + '" value="' + esc(value == null ? "" : value) + '"' + (opts.attr || "") + ">";
+    return '<div class="field" data-wrap="' + id + '"><label for="' + id + '">' + esc(label) + (opts.req ? '<span class="req">*</span>' : "") + "</label>" + input +
+      (opts.hint ? '<span class="hint">' + esc(opts.hint) + "</span>" : "") + '<span class="err-msg" data-err="' + id + '"></span></div>';
+  }
+  function fdChk(id, label, checked, disabled, hint) {
+    return '<div class="field" data-wrap="' + id + '"><label class="fd-check"><input type="checkbox" id="' + id + '"' + (checked ? " checked" : "") + (disabled ? " disabled" : "") + ">" + esc(label) + "</label>" +
+      (hint ? '<span class="hint">' + esc(hint) + "</span>" : "") + "</div>";
+  }
+  function fdEditSection(si) {
+    var isNew = si == null, s = isNew ? { title: "", desc: "" } : fdDraft.sections[si];
+    var body = fdIn("fds-title", "Гарчиг", s.title, { req: true, max: 120 }) +
+      fdIn("fds-desc", "Тайлбар (маягт дээр мэдээлэл болж харагдана)", s.desc, { textarea: true, max: 500 });
+    fdDialog(isNew ? "Хэсэг (карт) нэмэх" : "Хэсэг засах", body, function (f) {
+      return f.querySelector("#fds-title").value.trim() ? null : { "fds-title": "Гарчиг заавал." };
+    }).then(function (f) {
+      if (!f) return;
+      var title = f.querySelector("#fds-title").value.trim(), desc = f.querySelector("#fds-desc").value.trim();
+      if (isNew) fdDraft.sections.push({ id: "s_" + fdRand(8), title: title, desc: desc, fields: [] });
+      else { s.title = title; s.desc = desc; }
+      fdRender();
+    });
+  }
+  function fdEditField(si, fi) {
+    var isNew = fi == null;
+    var f = isNew ? { key: "cf_" + fdRand(10), label: "", type: "text", required: false, hidden: false, hint: "", ph: "", full: false, builtin: false }
+      : fdDraft.sections[si].fields[fi];
+    var typeSel = f.builtin
+      ? '<div class="field"><span class="label">Төрөл</span><span class="muted" style="padding-top:6px">' + esc(f.typeLabel || "") + " (системийн, өөрчлөх боломжгүй)</span></div>"
+      : '<div class="field"><label for="fdf-type">Төрөл<span class="req">*</span></label><select id="fdf-type">' + S.customTypes.map(function (t) {
+          return '<option value="' + t.key + '"' + (t.key === f.type ? " selected" : "") + ">" + esc(t.label) + "</option>"; }).join("") + "</select></div>";
+    var secSel = '<div class="field"><label for="fdf-sec">Хэсэг</label><select id="fdf-sec">' + fdDraft.sections.map(function (s, i) {
+      return '<option value="' + i + '"' + (i === si ? " selected" : "") + ">" + (i + 1) + ". " + esc(s.title) + "</option>"; }).join("") + "</select></div>";
+    var body = fdIn("fdf-label", "Талбарын нэр", f.label, { req: true, max: 200 }) + typeSel + secSel +
+      '<div data-wrap="fdf-options" class="field"><label for="fdf-options">Сонголтууд<span class="req">*</span></label>' +
+        '<textarea id="fdf-options" rows="4" maxlength="6200">' + esc((f.options || []).join("\n")) + '</textarea><span class="hint">Мөр бүрт нэг сонголт (50 хүртэл).</span><span class="err-msg" data-err="fdf-options"></span></div>' +
+      fdIn("fdf-hint", "Тусламж текст (талбарын доор)", f.hint, { textarea: true, max: 300 }) +
+      fdIn("fdf-ph", "Жишээ утга (placeholder)", f.ph, { max: 200 }) +
+      fdIn("fdf-max", "Хамгийн их урт (тэмдэгт)", f.max || "", { type: "number", attr: ' min="1" max="10000" step="1"', hint: "Хоосон бол: текст 300, урт текст 5000." }) +
+      fdChk("fdf-req", "Заавал бөглөх", f.required, f.lockReq, f.lockReq ? "Ажлын урсгалд шаардлагатай тул үргэлж заавал." : "Хадгалах (ноорог) үед шаардахгүй; илгээх / батлах үед шаардана.") +
+      fdChk("fdf-full", "Мөрийг бүтэн өргөнөөр эзлэх", f.full || f.block, f.block) +
+      (f.builtin && f.core ? "" : fdChk("fdf-hidden", f.builtin ? "Маягтаас нуух" : "Түр нуух (утгыг хадгална)", f.hidden, false));
+    var p = fdDialog(isNew ? "Талбар нэмэх" : "Талбар засах", body, function (form) {
+      var e = {}, t = form.querySelector("#fdf-type");
+      if (!form.querySelector("#fdf-label").value.trim()) e["fdf-label"] = "Нэр заавал.";
+      if (t && t.value === "select") {
+        var opts = form.querySelector("#fdf-options").value.split("\n").map(function (x) { return x.trim(); }).filter(Boolean);
+        if (!opts.length) e["fdf-options"] = "Дор хаяж нэг сонголт оруулна уу.";
+        else if (opts.length > 50) e["fdf-options"] = "50-аас ихгүй.";
+      }
+      var mx = form.querySelector("#fdf-max").value.trim();
+      if (mx && !(+mx >= 1 && +mx <= 10000)) e["fdf-max"] = "1–10000.";
+      return Object.keys(e).length ? e : null;
+    });
+    var form = fdDialog.last;
+    form._sync = function () {
+      var t = form.querySelector("#fdf-type"), type = t ? t.value : f.type;
+      form.querySelector('[data-wrap="fdf-options"]').hidden = type !== "select";
+      form.querySelector('[data-wrap="fdf-ph"]').hidden = f.block || ["select", "yesno", "date"].indexOf(type) >= 0;
+      form.querySelector('[data-wrap="fdf-max"]').hidden = f.builtin || ["text", "textarea"].indexOf(type) < 0;
+      var hid = form.querySelector("#fdf-hidden"), req = form.querySelector("#fdf-req");
+      if (hid && !f.lockReq) { req.disabled = hid.checked; if (hid.checked) req.checked = false; }
+    };
+    form._sync();
+    p.then(function (form) {
+      if (!form) return;
+      var g = function (id) { var el = form.querySelector("#" + id); return el ? el.value.trim() : ""; };
+      f.label = g("fdf-label");
+      f.hint = g("fdf-hint");
+      if (!f.builtin) {
+        f.type = g("fdf-type");
+        f.typeLabel = fdTypeLabel(f.type);
+        if (f.type === "select") f.options = g("fdf-options").split("\n").map(function (x) { return x.trim(); })
+          .filter(function (x, i, all) { return x && all.indexOf(x) === i; });
+        else delete f.options;
+        if (f.type === "text" || f.type === "textarea") { var mx = parseInt(g("fdf-max"), 10); if (mx) f.max = mx; else delete f.max; }
+        else delete f.max;
+      }
+      f.ph = form.querySelector('[data-wrap="fdf-ph"]').hidden ? "" : g("fdf-ph");
+      var hid = form.querySelector("#fdf-hidden");
+      f.hidden = hid ? hid.checked : false;
+      f.required = f.lockReq ? true : (!f.hidden && form.querySelector("#fdf-req").checked);
+      f.full = f.block ? true : form.querySelector("#fdf-full").checked;
+      var target = parseInt(g("fdf-sec"), 10);
+      if (isNew) fdDraft.sections[target].fields.push(f);
+      else if (target !== si) { fdDraft.sections[si].fields.splice(fi, 1); fdDraft.sections[target].fields.push(f); }
+      fdRender();
+    });
+  }
+  $("fd-tabs").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-form]"); if (!b || b.getAttribute("data-form") === fdKey) return;
+    var go = fdIsDirty() ? VR.confirm({ title: "Хадгалаагүй өөрчлөлтийг орхих уу?", body: "Энэ маягтад хийсэн өөрчлөлт хадгалагдахгүй.", confirmLabel: "Орхих", danger: true }) : Promise.resolve(true);
+    go.then(function (ok) { if (!ok) return; fdKey = b.getAttribute("data-form"); fdDraft = null; renderForms(false); });
+  });
+  $("fd-editor").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-fd]"); if (!b) return;
+    var act = b.getAttribute("data-fd"), li = b.closest("[data-f]"), sec = b.closest(".fd-sec");
+    var si = +(li || sec).getAttribute("data-s"), fi = li ? +li.getAttribute("data-f") : null;
+    var secs = fdDraft.sections;
+    if (act === "fup" || act === "fdown") { fdMoveField(si, fi, act === "fup" ? -1 : 1); fdRender(); }
+    else if (act === "sup" || act === "sdown") { var j = si + (act === "sup" ? -1 : 1), t = secs[si]; secs[si] = secs[j]; secs[j] = t; fdRender(); }
+    else if (act === "editsec") fdEditSection(si);
+    else if (act === "addfield") fdEditField(si, null);
+    else if (act === "editfield") fdEditField(si, fi);
+    else if (act === "toggle") { var f = secs[si].fields[fi]; f.hidden = !f.hidden; if (f.hidden) f.required = false; fdRender(); }
+    else if (act === "delfield") {
+      var cf = secs[si].fields[fi];
+      VR.confirm({ title: "Талбар устгах уу?", body: "«" + cf.label + "» маягтаас хасагдана. Бүртгэлүүдэд өмнө оруулсан утга устахгүй. Хадгалах товч дарснаар хэрэгжинэ.", confirmLabel: "Устгах", danger: true })
+        .then(function (ok) { if (ok) { secs[si].fields.splice(fi, 1); fdRender(); } });
+    } else if (act === "delsec") {
+      var s = secs[si];
+      if (secs.length === 1) { VR.toast("Маягтад дор хаяж нэг хэсэг байх ёстой.", "err"); return; }
+      var sys = s.fields.filter(function (x) { return x.builtin; });
+      if (sys.length) { VR.toast("Системийн талбаруудыг (" + sys.map(function (x) { return x.label; }).join(", ") + ") эхлээд өөр хэсэг рүү зөөнө үү.", "err"); return; }
+      VR.confirm({ title: "Хэсэг устгах уу?", body: "«" + s.title + "» хэсэг" + (s.fields.length ? " болон түүний " + s.fields.length + " нэмэлт талбар" : "") + " маягтаас хасагдана. Хадгалах товч дарснаар хэрэгжинэ.", confirmLabel: "Устгах", danger: true })
+        .then(function (ok) { if (ok) { secs.splice(si, 1); fdRender(); } });
+    }
+  });
+  $("fd-add-sec").addEventListener("click", function () { fdEditSection(null); });
+  $("fd-discard").addEventListener("click", function () { fdDraft = null; renderForms(false); VR.setErrors($("fd-form"), {}); $("fd-alert").textContent = ""; });
+  $("fd-reset").addEventListener("click", function () {
+    var customs = 0; fdDraft.sections.forEach(function (s) { s.fields.forEach(function (f) { if (!f.builtin) customs++; }); });
+    VR.confirm({ title: "Анхны бүтэц сэргээх үү?", body: "Хэсэг, системийн талбаруудын анхны нэр, дараалал сэргээгдэнэ" + (customs ? "; " + customs + " нэмэлт талбар маягтаас хасагдана (утга нь хадгалагдана)" : "") + ". Шалтгаан бичээд хадгалснаар хэрэгжинэ.", confirmLabel: "Сэргээх" })
+      .then(function (ok) { if (!ok) return; fdDraft = fdAnnotate(fdClone(S.formsDefault[fdKey])); fdRender(); });
+  });
+  $("fd-save").addEventListener("click", function () {
+    var form = $("fd-form"), alertBox = $("fd-alert"), reason = $("fd-reason").value.trim();
+    alertBox.textContent = "";
+    if (!fdIsDirty()) { VR.toast("Өөрчлөлт алга."); return; }
+    if (!reason) { VR.setErrors(form, { reason: "Өөрчлөлтийн шалтгааныг заавал бичнэ үү." }); alertBox.textContent = "Шалтгаан бичнэ үү."; return; }
+    VR.setErrors(form, {});
+    var btn = $("fd-save"); busy(btn, true);
+    VR.api(API, { form: { section: "forms", form_key: fdKey, schema: JSON.stringify(fdStrip(fdDraft)), reason: reason } }).then(function (r) {
+      busy(btn, false);
+      if (!r.ok) { alertBox.textContent = r.data.error || "Хадгалж чадсангүй."; if (r.data.fields) VR.setErrors(form, r.data.fields); return; }
+      $("fd-reason").value = "";
+      VR.toast(r.data.message, "ok");
+      fdDraft = null;
+      reload();
+    });
+  });
+  window.addEventListener("beforeunload", function (e) { if (fdIsDirty()) { e.preventDefault(); e.returnValue = ""; } });
+
+  // ---- SLA ----
+  function fmt(n) { return Number(n).toFixed(1); }
+  function readSla() {
+    var out = {};
+    LEVELS.forEach(function (k) {
+      var minEl = slaForm.querySelector('[name="' + k + '_min"]');
+      out[k] = { min: k === "low" ? 0.1 : parseFloat((minEl.value || "").replace(",", ".")),
+                 days: parseInt(slaForm.querySelector('[name="' + k + '_days"]').value, 10) };
+    });
+    return out;
+  }
+  function updateRanges() {
+    var s = readSla();
+    LEVELS.forEach(function (k, i) {
+      var cell = slaForm.querySelector('[data-range="' + k + '"]');
+      var lo = k === "low" ? "> 0.0" : (isNaN(s[k].min) ? "?" : fmt(s[k].min));
+      var hiLevel = LEVELS[i - 1], hi;
+      if (!hiLevel) hi = "10.0";
+      else hi = isNaN(s[hiLevel].min) ? "?" : fmt(Math.max(s[hiLevel].min - 0.1, 0));
+      cell.textContent = k === "low" ? "0.1 – " + hi : lo + " – " + hi;
+    });
+  }
+  function renderSla(sla) {
+    var max = S.slaMaxDays;
+    $("sla-rows").innerHTML = LEVELS.map(function (k) {
+      var minCell = k === "low"
+        ? '<span class="fixed-val">&gt; 0.0 (тогтмол)</span>'
+        : '<span class="sla-in"><span class="muted">≥</span><input type="number" class="input" name="' + k + '_min" min="0.1" max="10" step="0.1" inputmode="decimal" aria-label="' + LABEL[k] + ' — CVSS доод хязгаар" value="' + fmt(sla[k].min) + '"></span>' +
+          '<span class="err-msg cell-err" data-err="' + k + '_min"></span>';
+      return "<tr><td style=\"padding-top:14px\">" + VR.sevPill(k) + "</td><td>" + minCell + '</td><td class="sla-range mono" data-range="' + k + '"></td>' +
+        '<td><span class="sla-in"><input type="number" class="input" name="' + k + '_days" min="1" max="' + max + '" step="1" inputmode="numeric" aria-label="' + LABEL[k] + ' — засварлах хугацаа (хоног)" value="' + esc(sla[k].days) + '"><span class="muted">хоног</span></span>' +
+        '<span class="err-msg cell-err" data-err="' + k + '_days"></span></td></tr>';
+    }).join("");
+    updateRanges();
+  }
+  slaForm.addEventListener("input", updateRanges);
+  function validateSla(s) {
+    var e = {};
+    LEVELS.forEach(function (k) {
+      if (!/^\d{1,4}$/.test(slaForm.querySelector('[name="' + k + '_days"]').value.trim()) || !(s[k].days >= 1 && s[k].days <= S.slaMaxDays))
+        e[k + "_days"] = "1–" + S.slaMaxDays + " хоорондох бүхэл тоо оруулна уу.";
+      if (k !== "low" && !(s[k].min >= 0.1 && s[k].min <= 10)) e[k + "_min"] = "0.1–10.0 хооронд байх ёстой.";
+    });
+    if (!e.high_min && !e.critical_min && !(s.critical.min > s.high.min)) e.high_min = "High-ийн доод хязгаар Critical-аас бага байх ёстой.";
+    if (!e.medium_min && !e.high_min && !(s.high.min > s.medium.min)) e.medium_min = "Medium-ийн доод хязгаар High-аас бага байх ёстой.";
+    if (!e.medium_min && !(s.medium.min > 0.1)) e.medium_min = "Medium-ийн доод хязгаар 0.1-ээс их байх ёстой.";
+    return e;
+  }
+  slaForm.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var errs = validateSla(readSla());
+    if (!VR.setErrors(slaForm, errs)) { $("sla-alert").textContent = "Улаанаар тэмдэглэсэн талбаруудыг засна уу."; return; }
+    saveSection(slaForm, "sla", {}, "sla-alert", "sla-save", function (d) { VR.boot.sla = d.sla; });
+  });
+  $("sla-reset").addEventListener("click", function () {
+    renderSla(S.slaDefault); VR.setErrors(slaForm, {}); $("sla-alert").textContent = "";
+    VR.toast("Анхны утгыг бөглөлөө. Шалтгаан бичээд хадгална уу.");
+  });
+  $("recalc-btn").addEventListener("click", function () {
+    var btn = this; busy(btn, true);
+    VR.api(API + "/recalc", { form: { dry_run: "1" } }).then(function (r) {
+      busy(btn, false);
+      if (!r.ok) { VR.toast(r.data.error || "Алдаа гарлаа.", "err"); return; }
+      var d = r.data;
+      if (!d.affected) { VR.toast("Бүх нээлттэй бүртгэл одоогийн SLA-д нийцэж байна. Өөрчлөх зүйлгүй."); return; }
+      var body = "Түвшин/SLA өөрчлөгдөх: <b>" + d.affected + "</b> · хугацаа шилжих: <b>" + d.dueChanged + "</b> · гараар оруулсан хугацаа хадгалагдах: <b>" + d.manualDueKept + "</b>" +
+        (d.sample.length ? '<br><small class="muted">Жишээ: ' + d.sample.map(esc).join(", ") + (d.affected > d.sample.length ? " …" : "") + "</small>" : "");
+      return askReason("Дахин тооцоолох уу?", body).then(function (reason) {
+        if (!reason) return;
+        busy(btn, true);
+        return VR.api(API + "/recalc", { form: { dry_run: "0", reason: reason } }).then(function (r2) {
+          busy(btn, false);
+          if (!r2.ok) { VR.toast(r2.data.error || "Алдаа гарлаа.", "err"); return; }
+          VR.toast(r2.data.message || "Шинэчлэгдлээ.", "ok"); reload();
+        });
+      });
+    });
+  });
+
+  // ---- Deadline warning ----
+  function renderDeadline(n) { $("due_soon_days").value = n; $("dl-hint").textContent = "Анхны утга: " + S.dueSoonDefault + " хоног."; }
+  dlForm.addEventListener("submit", function (ev) {
+    ev.preventDefault();
+    var v = $("due_soon_days").value.trim();
+    if (!/^\d{1,2}$/.test(v) || +v > 90) { VR.setErrors(dlForm, { due_soon_days: "0–90 хоорондох бүхэл тоо оруулна уу." }); return; }
+    saveSection(dlForm, "deadline", {}, "dl-alert", "dl-save");
+  });
+  $("dl-reset").addEventListener("click", function () { $("due_soon_days").value = S.dueSoonDefault; VR.setErrors(dlForm, {}); });
+
+  // ---- History ----
+  function renderHistory(items) {
+    $("hist-empty").hidden = items.length > 0;
+    $("hist-rows").innerHTML = items.map(function (h) {
+      return '<tr><td class="mono" style="white-space:nowrap">' + esc(VR.fmtDateTime(h.at)) + "</td><td>" + esc(h.actor) + "</td><td>" + esc(h.setting || "—") +
+        '</td><td class="d">' + esc(h.old || "—") + '</td><td class="d">' + esc(h.new || "—") + '</td><td class="d">' + esc(h.reason || "—") + "</td></tr>";
+    }).join("");
+  }
+
+  reload();
+})();
+</script>
+</body>
+</html>

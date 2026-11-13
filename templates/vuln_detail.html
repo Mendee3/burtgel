@@ -1,0 +1,1066 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Эмзэг байдал — дэлгэрэнгүй | VulnReg</title>
+<link rel="icon" href="/favicon.ico" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/vulnreg.css">
+<style>
+.back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 600; min-height: 32px; margin-bottom: 8px; }
+.back:hover { color: var(--text); }
+.back .ico { width: 16px; height: 16px; }
+.d-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 20px; }
+.d-title { flex: 1 1 420px; min-width: 0; }
+.d-ref { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 600; color: var(--muted); }
+.d-title h1 { margin: 2px 0 10px; font-size: 22px; line-height: 1.3; font-weight: 700; letter-spacing: -.2px; overflow-wrap: anywhere; }
+.badges { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.sec-head h2 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.sec-head h2 small { color: var(--muted); font-weight: 500; font-size: 13px; }
+.sec-body { padding: 4px 20px 16px; }
+.kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; margin: 0; }
+.kv > div { padding: 12px 0; border-bottom: 1px solid var(--border); min-width: 0; }
+.kv > div.full { grid-column: 1 / -1; }
+.kv dt { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 3px; }
+.kv dd { margin: 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.kv dd.text { font-weight: 400; white-space: pre-wrap; line-height: 1.55; }
+.kv dd a { color: #1D4ED8; }
+.kv .nil { color: #94A3B8; font-weight: 400; }
+.kv > div:nth-last-child(1), .kv > div:nth-last-child(2):not(.full) { border-bottom: 0; }
+.cvss-big { display: flex; align-items: center; gap: 12px; }
+.cvss-big b { font-size: 20px; }
+.cvss-big .cvss-meter { max-width: 200px; }
+.ra-box { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: #F6F7F9; border: 1px dashed var(--border-strong); font-size: 13px; }
+.ra-box b { display: block; margin-bottom: 4px; }
+.ra-box.expired { background: var(--red-soft); border-color: #F5C2C2; color: var(--warn-red); }
+.empty-note { padding: 16px 0 4px; color: var(--muted); font-size: 13.5px; }
+
+/* Files */
+.files { list-style: none; margin: 0; padding: 0; }
+.files li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.files li:last-child { border-bottom: 0; }
+.f-ico { width: 36px; height: 36px; border-radius: 8px; background: var(--track); display: grid; place-items: center; color: var(--muted); flex: none; }
+.f-meta { flex: 1; min-width: 0; }
+.f-meta a { font-weight: 600; color: var(--text); text-decoration: none; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.f-meta a:hover { text-decoration: underline; }
+.f-meta small { color: var(--muted); font-size: 12px; }
+.drop { display: block; margin-top: 12px; border: 1.5px dashed var(--border-strong); border-radius: 10px; padding: 18px; text-align: center; color: var(--muted); font-size: 13px; cursor: pointer; background: #FAFBFC; }
+.drop:hover, .drop.over { border-color: var(--navy); background: #EEF2F8; color: var(--text); }
+.drop b { color: var(--text); }
+.drop input { display: none; }
+
+/* Timeline */
+.timeline { list-style: none; margin: 0; padding: 8px 20px 16px; max-height: calc(100vh - 140px); overflow-y: auto; }
+.tl { position: relative; padding: 10px 0 12px 30px; }
+.tl::before { content: ""; position: absolute; left: 10px; top: 28px; bottom: -10px; width: 2px; background: var(--border); }
+.tl:last-child::before { display: none; }
+.tl-dot { position: absolute; left: 0; top: 10px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--track); color: var(--muted); }
+.tl-dot .ico { width: 12px; height: 12px; stroke-width: 2.4; }
+.tl-dot.status { background: #EEF0FF; color: #4338CA; }
+.tl-dot.created { background: var(--green-soft); color: var(--green); }
+.tl-dot.danger { background: var(--red-soft); color: var(--warn-red); }
+.tl-head { font-size: 13.5px; line-height: 1.45; }
+.tl-head b { font-weight: 600; }
+.tl-time { font-size: 12px; color: var(--muted); margin-top: 1px; }
+.tl-diff { margin-top: 6px; font-size: 12.5px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tl-diff .old { color: var(--muted); text-decoration: line-through; overflow-wrap: anywhere; }
+.tl-diff .new { font-weight: 600; overflow-wrap: anywhere; }
+.tl-diff .arrow { color: var(--muted); }
+.tl-note { margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: #F6F7F9; font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl details { margin-top: 6px; font-size: 12.5px; }
+.tl details summary { cursor: pointer; color: #1D4ED8; font-weight: 600; }
+.tl details p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.audit-note { padding: 10px 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.audit-note .ico { width: 14px; height: 14px; }
+
+/* Workflow stepper, next-step banner, risk matrix */
+.wf { list-style: none; margin: -8px 0 16px; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.wf li { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; background: var(--track); color: var(--muted); font-size: 12.5px; font-weight: 600; }
+.wf .wf-n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: #fff; font-size: 11px; }
+.wf li.done { background: var(--green-soft); color: var(--green); }
+.wf li.cur { background: var(--navy); color: #fff; }
+.wf li.cur .wf-n { color: var(--navy); }
+.next-box { display: flex; gap: 10px; align-items: center; padding: 12px 16px; margin-bottom: 16px; border-radius: 10px; background: #EEF4FF; color: #1E3A8A; border: 1px solid #C9D8FB; font-size: 13.5px; }
+.next-box .ico { width: 18px; height: 18px; flex: none; }
+.warn { color: var(--warn-red); }
+.grp { list-style: none; margin: 0; padding: 0; }
+.grp li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.grp li:last-child { border-bottom: 0; }
+.grp a { flex: 1 1 220px; color: var(--text); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.grp a:hover { text-decoration: underline; }
+.imp { border-collapse: collapse; font-size: 13px; width: 100%; max-width: 420px; margin-bottom: 12px; }
+.imp td { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); }
+.imp td:last-child { text-align: right; width: 40px; }
+.mx { border-collapse: separate; border-spacing: 3px; font-size: 12px; margin-top: 4px; }
+.mx caption { caption-side: bottom; text-align: left; color: var(--muted); font-size: 11.5px; padding-top: 4px; }
+.mx th { color: var(--muted); font-weight: 600; width: 22px; text-align: center; }
+.mx td { width: 34px; height: 26px; text-align: center; border-radius: 4px; font-weight: 600; color: #334155; }
+.mx-low { background: #DCFCE7; } .mx-medium { background: #FEF3C7; } .mx-high { background: #FEE2E2; }
+.mx td.on { outline: 3px solid var(--navy); outline-offset: -1px; color: var(--navy); }
+.pill.rl-low { background: #DCFCE7; color: #166534; } .pill.rl-medium { background: #FEF3C7; color: #92400E; } .pill.rl-high { background: #FEE2E2; color: #991B1B; }
+.m-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.m-grid .field.full, .m-grid > .full { grid-column: 1 / -1; }
+.kv dt.cf-sec { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-top: 1px solid var(--border); padding-top: 10px; }
+.m-stack { display: flex; flex-direction: column; gap: 14px; }
+.fs { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px 14px; margin: 0; }
+.fs legend { font-size: 13px; font-weight: 600; padding: 0 6px; }
+@media (max-width: 600px) { .m-grid { grid-template-columns: 1fr; } }
+
+.sk-block { display: flex; flex-direction: column; gap: 10px; padding: 16px 20px; }
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 1fr; }
+  .timeline { max-height: none; }
+}
+@media (max-width: 600px) {
+  .kv { grid-template-columns: 1fr; }
+  .kv > div:nth-last-child(2):not(.full) { border-bottom: 1px solid var(--border); }
+  .d-head .actions { width: 100%; }
+  .d-head .actions > .btn-primary, .d-head .actions > .btn-secondary { flex: 1; }
+  .d-title h1 { font-size: 19px; }
+  .sec-head, .sec-body { padding-left: 16px; padding-right: 16px; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><path d="M12 9a4 4 0 0 1 4 4v3a4 4 0 0 1-8 0v-3a4 4 0 0 1 4-4z"/><path d="M9 7l1.5 2M15 7l-1.5 2M4 13h4M16 13h4M5 19l3-2M19 19l-3-2M5 8l3 2M19 8l-3 2"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></symbol>
+  <symbol id="i-user-plus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12z"/></symbol>
+  <symbol id="i-flow" viewBox="0 0 24 24"><path d="M4 7h11M11 3l4 4-4 4M20 17H9M13 13l-4 4 4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 19h14"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 20V9M7 14l5-5 5 5"/><path d="M5 5h14"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+</svg>
+
+<div class="shell collapsed" id="shell">
+  <aside class="sidebar" aria-label="Үндсэн цэс">
+    <a class="sb-brand" href="/registry/vulnerabilities" aria-label="VulnReg — Эмзэг байдлын бүртгэл">
+      <span class="sb-logo"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg></span>
+      <span class="sb-brand-text"><strong>VulnReg</strong><span>Эмзэг байдлын бүртгэл</span></span>
+    </a>
+    <nav class="sb-nav">{{SIDEBAR}}</nav>
+    <div class="sb-foot">
+      <div class="sb-user" data-tip="{{USER_NAME}} · {{USER_ROLE}}" tabindex="-1">
+        <span class="sb-avatar" aria-hidden="true">{{USER_INITIALS}}</span>
+        <span class="sb-user-text"><strong>{{USER_NAME}}</strong><span>{{USER_ROLE}}</span></span>
+      </div>
+      <a class="sb-btn" href="/dashboard" data-tip="МАБ Платформ руу буцах" aria-label="МАБ Платформ руу буцах"><svg class="ico" aria-hidden="true"><use href="#i-back"/></svg><span class="sb-btn-text">МАБ Платформ руу буцах</span></a>
+    </div>
+  </aside>
+
+  <main class="content" id="main">
+    <a class="back" id="back" href="/registry/vulnerabilities"><svg class="ico" aria-hidden="true"><use href="#i-back"/></svg>Эмзэг байдлын жагсаалт</a>
+    <div id="root">
+      <div class="card sk-block" aria-busy="true" aria-label="Ачаалж байна">
+        <span class="sk" style="width:120px"></span><span class="sk" style="width:60%;height:20px"></span><span class="sk" style="width:240px"></span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>window.VR_BOOT = {{BOOT_JSON}};</script>
+<script src="/static/vulnreg.js"></script>
+<script>
+(function () {
+  "use strict";
+  var B = VR.boot, esc = VR.esc, BASE = VR.BASE, ID = B.id;
+  var root = document.getElementById("root");
+  var rec = null, moreMenu = null;
+  VR.initShell();
+  try {
+    var listUrl = sessionStorage.getItem("vulnreg-list-url");
+    if (listUrl && listUrl.indexOf(BASE) === 0) document.getElementById("back").href = listUrl;
+  } catch (e) {}
+
+  var YN = { yes: "Тийм", no: "Үгүй", unknown: "Тодорхойгүй" };
+  var ENV_PRESENT = { yes: "Тийм", no: "Үгүй", unknown: "Тодорхойгүй" };
+  var COMPROMISE = { yes: "Тийм", no: "Үгүй", checking: "Шалгаж байна" };
+  var DECISION = { mitigate: "Бууруулах (Patch / Mitigate)", transfer: "Шилжүүлэх (Гэрээ / Даатгал / Нийлүүлэгч)",
+    avoid: "Зайлсхийх (систем зогсоох)", accept: "Хүлээн зөвшөөрөх (CTO зөвшөөрөл)" };
+  var LEVEL = { low: "Бага (Low)", medium: "Дунд (Medium)", high: "Өндөр (High)" };
+  var STEPS = ["Бүртгэл", "Томилгоо", "Үнэлгээ", "Эрсдэл", "Засвар", "Баталгаажуулалт", "Хаалт"];
+  var STEP_OF = { "new": 0, returned: 0, assigned: 1, under_assessment: 2, risk_assessment: 3, pending_cto: 3, accepted: 3,
+    avoidance: 3, remediation: 4, verification: 5, temp_mitigation: 5, not_affected: 6, transferred: 6, closed: 6 };
+  // Each button opens one form; a form may cover several server actions (e.g. save draft vs submit).
+  var GROUPS = [
+    { keys: ["save_assessment", "submit_assessment"], label: "Мэдээлэл бөглөх", icon: "edit", fn: openAssessment },
+    { keys: ["risk_assess"], label: "Эрсдэлийн үнэлгээ", icon: "flow", fn: openRisk },
+    { keys: ["cto_approve", "cto_reject"], label: "Эрсдэл хүлээн зөвшөөрөх эсэх", icon: "check", fn: openCto },
+    { keys: ["save_remediation", "submit_fix", "submit_temp", "cannot_remediate"], label: "Засвар / түр хамгаалалт", icon: "wrench", fn: openRemediation },
+    { keys: ["verify_fail", "verify_temp", "close"], label: "Баталгаажуулах", icon: "check", fn: openVerify },
+    { keys: ["avoid_confirm"], label: "Систем зогсоосныг баталгаажуулах", icon: "check", fn: openAvoidConfirm },
+    { keys: ["avoid_close"], label: "Хянаж хаах", icon: "check", fn: openAvoidClose },
+    { keys: ["temp_resume"], label: "Засвар руу шилжүүлэх", icon: "wrench", fn: function () { simple("temp_resume", "Засвар руу шилжүүлэх", "Patch гарсан эсвэл түр хамгаалалт хангалтгүй болсон тул засварын шатанд буцаана.", true); } },
+    { keys: ["resubmit"], label: "Засаад дахин илгээх", icon: "flow", fn: function () { simple("resubmit", "IT-ийн даргад дахин илгээх", "Засварласан бүртгэлийг IT-ийн даргад дахин хянуулна.", false); } },
+    { keys: ["return"], label: "Буцаах", icon: "back", fn: function () { simple("return", "InfoSec-д буцаах", "Мэдээлэл дутуу бол юуг засах шаардлагатайг бичнэ үү.", true); } }
+  ];
+
+  function nil(text) { return '<span class="nil">' + esc(text || "—") + "</span>"; }
+  function val(v) { return v ? esc(v) : nil(); }
+  function mono(v) { return v ? '<span class="mono">' + esc(v) + "</span>" : nil(); }
+  function kv(label, valueHtml, opts) {
+    opts = opts || {};
+    return '<div' + (opts.full ? ' class="full"' : "") + "><dt>" + esc(label) + "</dt><dd" + (opts.text ? ' class="text"' : "") + ">" + valueHtml + "</dd></div>";
+  }
+  function textKv(label, v) { return kv(label, v ? esc(v) : nil("Оруулаагүй"), { full: true, text: !!v }); }
+  function card(id, title, inner, extraHead) {
+    return '<section class="card" aria-labelledby="h-' + id + '"><div class="sec-head"><h2 id="h-' + id + '">' + title + "</h2>" + (extraHead || "") +
+      '</div><div class="sec-body">' + inner + "</div></section>";
+  }
+  function levelPill(l) { return l ? '<span class="pill rl-' + esc(l) + '">' + esc(LEVEL[l] || l) + "</span>" : nil("Үнэлээгүй"); }
+
+  function load() {
+    return VR.api(BASE + "/api/" + ID).then(function (r) {
+      if (!r.ok) {
+        root.innerHTML = '<div class="card"><div class="state err"><span class="state-ico"><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg></span>' +
+          "<h3>" + (r.status === 404 ? "Бүртгэл олдсонгүй" : "Мэдээлэл ачаалж чадсангүй") + "</h3><p>" + esc(r.data.error || "") + "</p>" +
+          '<div class="actions">' + (r.status === 404 ? "" : '<button type="button" class="btn-secondary" id="retry"><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Дахин оролдох</button>') +
+          '<a class="btn-secondary" href="' + BASE + '">Жагсаалт руу буцах</a></div></div></div>';
+        var rt = document.getElementById("retry"); if (rt) rt.addEventListener("click", load);
+        return;
+      }
+      rec = r.data;
+      render();
+    });
+  }
+
+  function has(k) { return rec.perms.actions.indexOf(k) >= 0; }
+  function groups() { return GROUPS.filter(function (g) { return g.keys.some(has); }); }
+
+  function stepper() {
+    var cur = STEP_OF[rec.status] != null ? STEP_OF[rec.status] : 0;
+    var done = ["closed", "not_affected", "transferred"].indexOf(rec.status) >= 0;
+    return '<ol class="wf" aria-label="Ажлын урсгал">' + STEPS.map(function (s, i) {
+      var cls = i < cur || (done && i === cur) ? "done" : (i === cur ? "cur" : "");
+      return '<li class="' + cls + '"' + (i === cur ? ' aria-current="step"' : "") + '><span class="wf-n">' + (i + 1) + "</span><span>" + esc(s) + "</span></li>";
+    }).join("") + "</ol>";
+  }
+
+  function render() {
+    var p = rec.perms;
+    document.title = rec.ref + " — " + rec.title + " | VulnReg";
+    var gs = groups();
+    var btns = gs.map(function (g, i) {
+      return '<button type="button" class="' + (i === 0 ? "btn-primary" : "btn-secondary") + '" data-group="' + GROUPS.indexOf(g) + '"><svg class="ico" aria-hidden="true"><use href="#i-' + g.icon + '"/></svg>' + esc(g.label) + "</button>";
+    }).join("");
+    var head =
+      '<div class="d-head"><div class="d-title"><div class="d-ref">' + esc(rec.ref) + "</div><h1>" + esc(rec.title) + "</h1>" +
+      '<div class="badges">' + VR.sevPill(rec.severity) + VR.statusHtml(rec.status) +
+      (rec.deadline.kind !== "done" ? VR.deadlineHtml(rec.deadline) : "") + "</div></div>" +
+      '<div class="actions">' + btns +
+      (p.assign ? '<button type="button" class="' + (rec.status === "new" && !btns ? "btn-primary" : "btn-secondary") + '" id="act-assign"><svg class="ico" aria-hidden="true"><use href="#i-user-plus"/></svg>' + (rec.assignee ? "Инженер солих" : "Инженер томилох") + "</button>" : "") +
+      (p.comment ? '<button type="button" class="btn-secondary" id="act-comment"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg>Сэтгэгдэл</button>' : "") +
+      '<div class="menu-wrap"><button type="button" class="icon-btn" id="act-more" aria-label="Бусад үйлдэл"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button>' +
+      '<div class="menu" id="more-menu" role="menu" hidden>' +
+      (p.edit ? '<button type="button" role="menuitem" data-act="edit"><svg class="ico" aria-hidden="true"><use href="#i-edit"/></svg>Бүртгэл засах</button>' : "") +
+      (p.upload ? '<button type="button" role="menuitem" data-act="upload"><svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg>Нотлох баримт хавсаргах</button>' : "") +
+      '<button type="button" role="menuitem" data-act="copy"><svg class="ico" aria-hidden="true"><use href="#i-link"/></svg>Холбоос хуулах</button>' +
+      (p.delete ? '<hr><button type="button" role="menuitem" class="danger" data-act="delete"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg>Бүртгэл устгах</button>' : "") +
+      "</div></div></div></div>" + stepper();
+
+    var waiting = whoIsNext();
+    var banner = waiting ? '<div class="next-box"><svg class="ico" aria-hidden="true"><use href="#i-flow"/></svg><span>' + waiting + "</span></div>" : "";
+
+    var L = VR.formLabel;
+    var general = card("gen", "Ерөнхий мэдээлэл", '<dl class="kv">' +
+      kv(L("register", "title", "Эмзэг байдлын нэр"), esc(rec.title), { full: true }) +
+      kv(L("register", "cve_id", "CVE"), rec.cve ? '<a class="mono" href="https://nvd.nist.gov/vuln/detail/' + encodeURIComponent(rec.cve) + '" target="_blank" rel="noopener noreferrer">' + esc(rec.cve) + "</a>" : nil()) +
+      kv("CVSS / Түвшин", (rec.cvss != null ? "<b>" + Number(rec.cvss).toFixed(1) + "</b> " : "") + VR.sevHtml(rec.severity)) +
+      kv("SLA (засварлах хугацаа)", (rec.due ? mono(rec.due) + " " : "") + (rec.remediationDays != null ? '<span class="muted">(' + esc(rec.remediationDays) + " хоног)</span> " : "") + VR.deadlineHtml(rec.deadline)) +
+      kv(L("register", "source", "Илрүүлсэн эх сурвалж"), val(rec.source) + (rec.sourceUrl && /^https?:\/\//i.test(rec.sourceUrl) ?
+        '<br><a href="' + esc(rec.sourceUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(rec.sourceUrl) + "</a>" : "")) +
+      kv("Нийтэлсэн / мэдээлсэн огноо", '<span class="mono">' + esc(rec.published || "—") + " / " + esc(rec.reported || "—") + "</span>") +
+      kv("Бүртгэсэн", val(rec.createdBy) + ' <span class="muted mono">' + esc(VR.fmtDateTime(rec.createdAt)) + "</span>") +
+      kv("Хариуцах инженер", rec.assignee ? esc(rec.assignee.name) : nil("Томилоогүй")) +
+      textKv(L("register", "description", "Тайлбар"), rec.description) +
+      textKv(L("register", "recommendation", "Засварлах зөвлөмж"), rec.recommendation) +
+      VR.customKv("register", rec.custom, kv) +
+      "</dl>");
+
+    var a = rec.assetInfo, inUse = YN[rec.inUse];
+    var asset = card("asset", "Мэдээллийн хөрөнгө / Систем", a ? '<dl class="kv">' +
+        kv("Хөрөнгө", esc(a.name) + (a.id ? ' <span class="muted mono">#' + a.id + "</span>" : "")) +
+        kv("Хэлтэс", val(a.dept)) +
+        kv(L("engineer", "owner_custodian", "Хөрөнгө эзэмшигч / Хариуцагч"), val(rec.ownerCustodian)) +
+        kv(L("engineer", "in_use", "Ашиглагдаж байгаа эсэх"), inUse ? esc(inUse) : nil()) +
+        kv(L("engineer", "env_present", "Манай орчинд энэ эмзэг байдал байгаа эсэх"), ENV_PRESENT[rec.envPresent] ? esc(ENV_PRESENT[rec.envPresent]) : nil()) +
+        kv(L("engineer", "compromise_signs", "Халдлагад өртсөн шинж тэмдэг байгаа эсэх"), COMPROMISE[rec.compromiseSigns]
+          ? (rec.compromiseSigns === "yes" ? '<b class="warn">' + esc(COMPROMISE[rec.compromiseSigns]) + "</b>" : esc(COMPROMISE[rec.compromiseSigns])) : nil()) +
+        kv("Шалгасан огноо", rec.assessment.submittedAt ? mono(VR.fmtDateTime(rec.assessment.submittedAt)) : nil()) +
+        kv("Хөрөнгийн төрөл", val(a.type)) + kv("Байршил", val(a.location)) + "</dl>"
+      : '<p class="empty-note">' + (STEP_OF[rec.status] <= 2 ? "Томилогдсон инженер бөглөнө." : "Хөрөнгөтэй холбоогүй.") + "</p>");
+
+    var group = rec.group.length ? card("grp", "Энэ бүртгэлийн бусад хөрөнгө <small>(" + rec.group.length + ")</small>",
+      '<ul class="grp">' + rec.group.map(function (g) {
+        return '<li><a href="' + BASE + "/" + g.id + '"><span class="mono">' + esc(g.ref) + "</span> " + esc(g.asset || "—") + "</a>" +
+          VR.statusHtml(g.status) + '<small class="muted">' + esc(g.assignee || "Инженер томилоогүй") + "</small></li>";
+      }).join("") + "</ul>") : "";
+
+    var as = rec.assessment;
+    var assess = (as.submittedAt || as.as_conclusion || STEP_OF[rec.status] >= 2) ? card("as", "Үнэлгээ (Инженер)", '<dl class="kv">' +
+      kv("Шалгасан огноо", as.submittedAt ? mono(VR.fmtDateTime(as.submittedAt)) : nil("Илгээгээгүй")) +
+      kv("Ашиглагдсан шинж тэмдэг", as.as_exploited === "yes" ? '<b class="warn">Тийм — Зөрчлийн удирдлагын процесс</b>' + (as.as_incident_ref ? " · " + mono(as.as_incident_ref) : "") : (as.as_exploited ? esc(YN[as.as_exploited]) : nil())) +
+      kv(L("engineer", "affected_asset", "Нөлөөлж болзошгүй хөрөнгө / Систем"), val(rec.affectedAsset || (rec.assetInfo ? rec.assetInfo.name : ""))) +
+      kv(L("engineer", "owner_custodian", "Хөрөнгө эзэмшигч / Хариуцагч"), val(rec.ownerCustodian)) + kv(L("engineer", "as_version", "Одоогийн хувилбар"), val(as.as_version)) +
+      kv(L("engineer", "as_internet_facing", "Интернэтэд нээлттэй эсэх"), as.as_internet_facing ? esc(YN[as.as_internet_facing]) : nil()) +
+      kv(L("engineer", "as_patch_available", "Patch гарсан эсэх"), as.as_patch_available ? esc(YN[as.as_patch_available]) : nil()) +
+      textKv(L("engineer", "as_scope", "Хамрах хүрээ"), as.as_scope) + textKv(L("engineer", "as_test_method", "Шалгасан арга"), as.as_test_method) +
+      (evidenceFiles().length ? kv(L("engineer", "evidence_files", "Нотолгоо (халдлагын баталгаа)"), evidenceThumbs(evidenceFiles()), { full: true })
+        : textKv(L("engineer", "evidence_files", "Нотолгоо (халдлагын баталгаа)"), as.as_evidence)) +
+      textKv(L("engineer", "as_conclusion", "Үнэлгээний дүгнэлт"), as.as_conclusion) +
+      VR.customKv("engineer", rec.custom, kv) + "</dl>") : "";
+    var ia = rec.impactDecision;
+    var impactCard = ia.decidedAt ? card("ia", "Хөрөнгөд нөлөөлсөн эсэх (InfoSec)", '<dl class="kv">' +
+      kv("Шийдвэр", ia.affected ? (ia.affected === "no" ? "<b>Үгүй — Нөлөөлөөгүй</b>" : "<b>Тийм — Нөлөөлсөн</b>") : nil("Тодорхойлоогүй")) +
+      kv("Тодорхойлсон", ia.decidedBy ? esc(ia.decidedBy) + (ia.decidedAt ? ' <span class="muted">' + esc(VR.fmtDateTime(ia.decidedAt)) + "</span>" : "") : nil()) +
+      textKv("Тайлбар", ia.note) + "</dl>") : "";
+
+    var rk = rec.risk, cfg = rec.riskConfig;
+    var riskInner = "";
+    if (rk.level || rk.threat || STEP_OF[rec.status] >= 3 && rec.status !== "not_affected") {
+      riskInner = '<dl class="kv">' +
+        kv("Эрсдэлийн түвшин", levelPill(rk.level) + (rk.score ? ' <span class="muted">' + rk.impact + " × " + rk.likelihood + " = " + rk.score + "</span>" : "")) +
+        kv("Үнэлгээний хугацаа", rk.due ? mono(rk.due) + (rk.dueKind === "overdue" ? ' <span class="dl-ind dl-overdue">Хэтэрсэн</span>' : "") + ' <span class="muted">(SLA зогсохгүй)</span>' : nil()) +
+        textKv(L("risk", "ra_threat", "Аюул (Threat)"), rk.threat) +
+        '<div class="full"><dt>Нөлөөлөл (1–5)</dt><dd><table class="imp"><tbody>' + cfg.criteria.map(function (c, i) {
+          return "<tr><td>" + esc(c) + '</td><td class="mono">' + (rk.impacts[i] != null ? esc(rk.impacts[i]) : "—") + "</td></tr>";
+        }).join("") + "<tr><td><b>Нөлөөлөл (дээд утга)</b></td><td class=\"mono\"><b>" + (rk.impact || "—") + "</b></td></tr>" +
+        "<tr><td><b>Магадлал</b></td><td class=\"mono\"><b>" + (rk.likelihood || "—") + "</b></td></tr></tbody></table>" + matrixHtml(rk.impact, rk.likelihood, cfg) + "</dd></div>" +
+        kv("Шийдвэр", rk.decision ? "<b>" + esc(DECISION[rk.decision]) + "</b>" : nil("Шийдвэр гараагүй")) +
+        kv("Үнэлсэн", rk.assessedBy ? esc(rk.assessedBy) + ' <span class="muted mono">' + esc(VR.fmtDateTime(rk.assessedAt)) + "</span>" : nil()) +
+        textKv(L("risk", "ra_decision_note", "Шийдвэрийн үндэслэл"), rk.decisionNote) +
+        VR.customKv("risk", rec.custom, kv) + "</dl>";
+      var ra = rec.riskAccept;
+      if (ra && (ra.until || ra.reason)) {
+        var expired = ra.until && ra.until < VR.todayIso && rec.status === "accepted";
+        riskInner += '<div class="ra-box' + (expired ? " expired" : "") + '"><b>' +
+          (rec.status === "pending_cto" ? "CTO-ийн зөвшөөрөл хүлээж байна" : (ra.approver ? "CTO зөвшөөрсөн: " + esc(ra.approver) : "Хүлээн зөвшөөрөх хүсэлт")) + "</b>" +
+          "Хугацаа: " + esc(ra.until || "—") + (ra.requestedBy ? " · Хүссэн: " + esc(ra.requestedBy) : "") + (ra.reason ? "<br>" + esc(ra.reason) : "") +
+          "<br><small>Хугацаа дуусахад эрсдэлийн үнэлгээнд автоматаар буцна.</small></div>";
+      }
+    }
+    var risk = riskInner ? card("risk", "Эрсдэлийн үнэлгээ (InfoSec · MAS-14)", riskInner) : "";
+
+    var rm = rec.remediation;
+    var remed = (rm.plan || rm.tmControls || rm.avoidNote || STEP_OF[rec.status] >= 4 && ["not_affected", "transferred"].indexOf(rec.status) < 0 || rec.status === "avoidance") ?
+      card("rem", "Засвар / Түр хамгаалалт (Инженер)", '<dl class="kv">' +
+        kv("Дуусгах товлосон огноо", mono(rm.targetDate)) + kv("Өөрчлөлтийн дугаар", mono(rm.changeRef)) +
+        kv("Зассан огноо", mono(rec.remediatedDate)) +
+        kv("Төрөл", rm.fixType === "temp" ? "Түр хамгаалалт" : (rm.fixType === "fixed" ? "Бүрэн засвар" : nil())) +
+        textKv("Засварын төлөвлөгөө", rm.plan) + textKv("Авах арга хэмжээ", rm.actions) +
+        (rm.tmControls ? textKv("Түр хамгаалалт (нөхөх хяналт)", rm.tmControls) + kv("Түр хамгаалалт хүчинтэй", mono(rm.tmUntil), { full: true }) : "") +
+        (rm.avoidNote ? textKv("Зогсоосон систем / үйлчилгээ", rm.avoidNote) : "") +
+        (rec.remediationNotes ? textKv("Засварын тэмдэглэл (өмнөх)", rec.remediationNotes) : "") + "</dl>") : "";
+
+    var cl = rec.closure;
+    var closure = (cl.vfNote || cl.comment || rec.closedAt) ? card("cl", "Баталгаажуулалт ба хаалт (InfoSec)", '<dl class="kv">' +
+      kv("Эрсдэлийн төлөв", cl.riskStatusLabel ? "<b>" + esc(cl.riskStatusLabel) + "</b>" : nil()) +
+      kv("Хаагдсан огноо", rec.closedAt ? mono(VR.fmtDateTime(rec.closedAt)) : nil()) +
+      textKv("Баталгаажуулалт (дахин скан / хувилбар)", cl.vfNote) + textKv("Хаалтын тайлбар", cl.comment) +
+      textKv("Үлдэгдэл эрсдэл", cl.residual) + "</dl>") : "";
+
+    var files = '<section class="card" aria-labelledby="h-files"><div class="sec-head"><h2 id="h-files">Нотлох баримт <small>(' + rec.files.length + ")</small></h2></div><div class=\"sec-body\">" +
+      (rec.files.length ? '<ul class="files">' + rec.files.map(function (f) {
+        var href = BASE + "/" + rec.id + "/files/" + f.id;
+        return '<li><span class="f-ico"><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg></span><div class="f-meta">' +
+          '<a href="' + href + '" title="' + esc(f.name) + '">' + esc(f.name) + "</a><small>" + esc(VR.fmtSize(f.size)) + " · " + esc(f.uploader || "—") + " · " + esc(VR.fmtDateTime(f.uploadedAt)) + "</small></div>" +
+          '<a class="icon-btn plain" href="' + href + '" aria-label="' + esc(f.name + " татах") + '"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg></a>' +
+          (f.canDelete ? '<button type="button" class="icon-btn plain" data-del-file="' + f.id + '" data-name="' + esc(f.name) + '" aria-label="' + esc(f.name + " устгах") + '"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg></button>' : "") +
+          "</li>";
+      }).join("") + "</ul>" : '<p class="empty-note">Хавсаргасан файл алга.</p>') +
+      (p.upload ? '<label class="drop" id="drop"><input type="file" id="file-input" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.log,.json,.xml,.png,.jpg,.jpeg,.gif,.zip,.7z,.html,.md">' +
+        '<svg class="ico" aria-hidden="true" style="width:22px;height:22px"><use href="#i-upload"/></svg><br><b>Файл сонгох</b> эсвэл энд чирж оруулна уу<br><small>Дэлгэцийн зураг, скан тайлан, гэрээ, лог · нэг файл 20 МБ хүртэл</small></label>' : "") +
+      "</div></section>";
+
+    var activity = '<section class="card" aria-labelledby="h-act"><div class="sec-head"><h2 id="h-act">Түүх <small>(' + rec.activity.length + ")</small></h2></div>" +
+      '<ol class="timeline">' + rec.activity.map(tlItem).join("") + "</ol>" +
+      '<div class="audit-note"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>Бүртгэлээс хаалт хүртэлх бүх үйлдэл, сэтгэгдэл, хавсралт, төлөвийн өөрчлөлт. Засах, устгах боломжгүй.</div></section>';
+
+    root.innerHTML = head + banner + '<div class="layout"><div class="col">' + general + asset + group + assess + impactCard + risk + remed + closure + files + '</div><div class="col">' + activity + "</div></div>";
+    wire();
+  }
+
+  function whoIsNext() {
+    var s = rec.status, mine = groups().length > 0;
+    var who = {
+      "new": "IT-ийн дарга хянаж, инженер томилно.", returned: "InfoSec мэдээллийг засаж дахин илгээнэ.",
+      assigned: "Томилогдсон инженер мэдээллийг бөглөж илгээнэ.", under_assessment: "Инженер хөрөнгө ба хариуцлагын мэдээлэл, үнэлгээг бөглөж илгээнэ.",
+      risk_assessment: rec.impactDecision.affected === "yes" ? "InfoSec MAS-14-ийн дагуу эрсдэлийг үнэлж шийдвэр гаргана."
+        : "InfoSec хөрөнгөд нөлөөлсөн эсэхийг тодорхойлж, эрсдэлийг үнэлнэ.", pending_cto: "CTO эрсдэл хүлээн зөвшөөрөх эсэхийг шийднэ.",
+      avoidance: rec.remediation.avoidConfirmedAt ? "InfoSec хянаж хаана." : "Инженер системийг зогсоож баталгаажуулна.",
+      remediation: "Инженер засвар эсвэл түр хамгаалалт хэрэгжүүлнэ.", verification: "InfoSec дахин скан, хувилбар шалгаж баталгаажуулна.",
+      temp_mitigation: "Түр хамгаалалт " + (rec.remediation.tmUntil || "") + " хүртэл. Patch гарвал эсвэл хугацаа дуусвал засвар руу буцна.",
+      accepted: "Эрсдэл " + ((rec.riskAccept && rec.riskAccept.until) || "") + " хүртэл хүлээн зөвшөөрөгдсөн."
+    }[s];
+    if (!who) return "";
+    return (mine ? "<b>Таны ээлж.</b> " : "Дараагийн алхам: ") + esc(who);
+  }
+
+  function matrixHtml(impact, likelihood, cfg) {
+    var rows = "";
+    for (var l = 5; l >= 1; l--) {
+      rows += '<tr><th scope="row">' + l + "</th>";
+      for (var i = 1; i <= 5; i++) {
+        var sc = i * l, lv = sc <= cfg.low_max ? "low" : (sc <= cfg.medium_max ? "medium" : "high");
+        var on = impact === i && likelihood === l;
+        rows += '<td class="mx-' + lv + (on ? " on" : "") + '"' + (on ? ' aria-label="Одоогийн эрсдэл"' : "") + ">" + sc + "</td>";
+      }
+      rows += "</tr>";
+    }
+    return '<table class="mx" aria-label="5×5 эрсдэлийн матриц"><caption>Магадлал ↑ · Нөлөөлөл →</caption><tbody>' + rows +
+      '<tr><th></th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th></tr></tbody></table>';
+  }
+
+  var EVENT = {
+    assessment_submitted: ["status", "check", "хөрөнгө ба хариуцлага, үнэлгээ илгээв"], impact_decided: ["status", "check", "хөрөнгөд нөлөөлсөн эсэхийг тодорхойлов"], risk_assessed: ["status", "flow", "эрсдэлийн үнэлгээ хийж шийдвэр гаргав"],
+    cto_approved: ["created", "check", "эрсдэлийг хүлээн зөвшөөрөв (CTO)"], cto_rejected: ["danger", "x", "эрсдэл хүлээн зөвшөөрөхөөс татгалзав (CTO)"],
+    avoid_confirmed: ["status", "check", "системийг зогсоосноо баталгаажуулав"], fix_submitted: ["status", "wrench", "засвар хийснээ мэдэгдэв"],
+    temp_submitted: ["status", "wrench", "түр хамгаалалт хэрэгжүүлснээ мэдэгдэв"], cannot_remediate: ["danger", "alert", "засварлах боломжгүй гэж мэдэгдэв"],
+    verify_failed: ["danger", "x", "засагдаагүй гэж буцаав"], verify_temp: ["status", "check", "түр хамгаалалтыг баталгаажуулав"],
+    closed: ["created", "check", "бүртгэлийг хаав"], incident_flagged: ["danger", "alert", "ашиглагдсан шинж тэмдэг илрүүлэв — Зөрчлийн удирдлага"],
+    accept_expired: ["danger", "refresh", "эрсдэл хүлээн зөвшөөрсөн хугацаа дуусав"], temp_expired: ["danger", "refresh", "түр хамгаалалтын хугацаа дуусав"],
+    risk_accepted: ["status", "check", "эрсдэлийг хүлээн зөвшөөрөв"]
+  };
+  function tlItem(e) {
+    var who = "<b>" + esc(e.actor || "Систем") + "</b>";
+    var dotCls = "", icon = "dot", text = "", diff = "", note = e.note ? '<div class="tl-note">' + esc(e.note) + "</div>" : "";
+    if (e.action === "created") { dotCls = "created"; icon = "plus"; text = who + " эмзэг байдлыг бүртгэв"; }
+    else if (e.action === "status_changed") {
+      dotCls = "status"; icon = "flow"; text = who + " төлөв өөрчлөв";
+      diff = '<div class="tl-diff">' + VR.statusHtml(e.old) + '<span class="arrow">→</span>' + VR.statusHtml(e.new) + "</div>";
+    } else if (EVENT[e.action]) {
+      dotCls = EVENT[e.action][0]; icon = EVENT[e.action][1]; text = who + " " + EVENT[e.action][2];
+      if (e.new) diff = '<div class="tl-diff"><span class="new">' + esc(e.new) + "</span></div>";
+    } else if (e.action === "file_added") { icon = "upload"; text = who + " нотлох баримт хавсаргав: <b>" + esc(e.new) + "</b>"; }
+    else if (e.action === "file_deleted") { dotCls = "danger"; icon = "trash"; text = who + " нотлох баримт устгав: <b>" + esc(e.old) + "</b>"; }
+    else if (e.action === "commented") { icon = "chat"; text = who + " сэтгэгдэл бичив"; }
+    else if (e.action === "deleted") { dotCls = "danger"; icon = "trash"; text = who + " бүртгэлийг устгав"; }
+    else if (e.action === "updated") {
+      icon = "edit";
+      if (e.field === "assignee_id" && e.new) text = who + " инженер " + (e.old ? "солив: " + esc(e.old) + " → " : "томилов: ") + "<b>" + esc(e.new) + "</b>";
+      else {
+        text = who + " <b>" + esc(e.fieldLabel) + "</b> өөрчлөв";
+        var long = (e.old || "").length > 120 || (e.new || "").length > 120;
+        if (long) {
+          diff = "<details><summary>Өөрчлөлтийг харах</summary><p><b>Өмнө:</b> " + (e.old ? esc(e.old) : "(хоосон)") +
+            "</p><p><b>Шинэ:</b> " + (e.new ? esc(e.new) : "(хоосон)") + "</p></details>";
+        } else {
+          diff = '<div class="tl-diff"><span class="old">' + (e.old ? esc(e.old) : "(хоосон)") + '</span><span class="arrow">→</span><span class="new">' +
+            (e.new ? esc(e.new) : "(хоосон)") + "</span></div>";
+        }
+      }
+    } else { text = who + " " + esc(e.action); }
+    return '<li class="tl"><span class="tl-dot ' + dotCls + '"><svg class="ico" aria-hidden="true"><use href="#i-' + icon + '"/></svg></span>' +
+      '<div class="tl-head">' + text + '</div><div class="tl-time"><time datetime="' + esc(e.at) + '">' + esc(VR.fmtDateTime(e.at)) + "</time></div>" + diff + note + "</li>";
+  }
+
+  function wire() {
+    var $ = function (id) { return document.getElementById(id); };
+    Array.prototype.forEach.call(root.querySelectorAll("[data-group]"), function (b) {
+      b.addEventListener("click", function () { GROUPS[+b.getAttribute("data-group")].fn(); });
+    });
+    if ($("act-assign")) $("act-assign").addEventListener("click", openAssign);
+    if ($("act-comment")) $("act-comment").addEventListener("click", openComment);
+    moreMenu = VR.menu($("act-more"), $("more-menu"));
+    root.addEventListener("click", onAct);
+    var drop = $("drop"), input = $("file-input");
+    if (drop) {
+      input.addEventListener("change", function () { if (input.files.length) upload(input.files); input.value = ""; });
+      ["dragenter", "dragover"].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+      ["dragleave", "drop"].forEach(function (t) { drop.addEventListener(t, function () { drop.classList.remove("over"); }); });
+      drop.addEventListener("drop", function (e) { e.preventDefault(); if (e.dataTransfer.files.length) upload(e.dataTransfer.files); });
+    }
+  }
+  function onAct(e) {
+    var b = e.target.closest("[data-act]");
+    if (b) {
+      var act = b.getAttribute("data-act");
+      if (act === "edit") openEdit();
+      else if (act === "upload") { var fi = document.getElementById("file-input"); if (fi) fi.click(); }
+      else if (act === "copy") {
+        var url = location.origin + BASE + "/" + rec.id;
+        (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { VR.toast("Холбоос хуулагдлаа.", "ok"); },
+          function () { window.prompt("Холбоос:", url); });
+      } else if (act === "delete") deleteRecord();
+      return;
+    }
+    var df = e.target.closest("[data-del-file]");
+    if (df) {
+      VR.confirm({ title: "Файл устгах уу?", body: "«" + df.getAttribute("data-name") + "» файлыг устгана. Энэ үйлдэл түүхэнд бүртгэгдэнэ.", confirmLabel: "Устгах", danger: true })
+        .then(function (ok) {
+          if (!ok) return;
+          VR.api(BASE + "/api/" + rec.id + "/files/" + df.getAttribute("data-del-file") + "/delete", { form: {} }).then(done);
+        });
+    }
+  }
+  function done(r) {
+    if (!r.ok) { VR.toast(r.data.error || "Алдаа гарлаа.", "err"); return false; }
+    VR.toast(r.data.message || "Хадгалагдлаа.", "ok");
+    load();
+    return true;
+  }
+  function openEdit() {
+    VR.openVulnForm({ record: rec, onSaved: function (d) { VR.toast(d.message || "Хадгалагдлаа.", "ok"); load(); } });
+  }
+  function upload(fileList) {
+    var fd = new FormData();
+    var big = [];
+    Array.prototype.forEach.call(fileList, function (f) { if (f.size > 20 * 1048576) big.push(f.name); fd.append("files", f, f.name); });
+    if (big.length) { VR.toast("20 МБ-аас их файл: " + big.join(", "), "err"); return; }
+    VR.toast("Файл хуулж байна…", "");
+    VR.api(BASE + "/api/" + rec.id + "/files", { form: fd }).then(done);
+  }
+
+  // ---------- Modals ----------
+  /* buttons: [{label, value, primary}] — the clicked button's value is passed to collect() */
+  function modal(title, sub, bodyHtml, buttons, wide) {
+    var dlg = document.createElement("dialog");
+    dlg.className = "modal" + (wide ? "" : " narrow");
+    dlg.setAttribute("aria-labelledby", "md-title");
+    buttons = typeof buttons === "string" ? [{ label: buttons, value: "", primary: true }] : buttons;
+    dlg.innerHTML = '<form novalidate><div class="m-head"><div><h2 id="md-title">' + esc(title) + "</h2><p>" + esc(sub) + "</p></div>" +
+      '<button type="button" class="icon-btn" data-close aria-label="Хаах"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>' +
+      '<div class="m-body"><div class="m-alert" role="alert" data-alert></div>' + bodyHtml + "</div>" +
+      '<div class="m-foot"><button type="button" class="btn-secondary" data-close>Болих</button>' + buttons.map(function (b) {
+        return '<button type="submit" class="' + (b.primary ? "btn-primary" : "btn-secondary") + '" data-submit value="' + esc(b.value) + '">' + esc(b.label) + "</button>";
+      }).join("") + "</div></form>";
+    Array.prototype.forEach.call(dlg.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { dlg.close(); }); });
+    dlg.addEventListener("close", function () { dlg.remove(); });
+    return dlg;
+  }
+  function submitTo(dlg, url, collect, before, onSuccess) {
+    var form = dlg.querySelector("form"), alertBox = dlg.querySelector("[data-alert]");
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var which = ev.submitter ? ev.submitter.value : "";
+      alertBox.textContent = "";
+      VR.setErrors(form, {});
+      var data = collect(form, which);
+      if (!data) { alertBox.textContent = "Улаанаар тэмдэглэсэн талбаруудыг бөглөнө үү."; return; }
+      (before ? before(data) : Promise.resolve(true)).then(function (go) {
+        if (!go) return;
+        var btns = dlg.querySelectorAll("[data-submit]");
+        Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
+        VR.api(url, { form: data }).then(function (r) {
+          Array.prototype.forEach.call(btns, function (b) { b.disabled = false; });
+          if (!r.ok) {
+            alertBox.textContent = r.data.error || "Алдаа гарлаа.";
+            if (r.data.fields) VR.setErrors(form, r.data.fields);
+            return;
+          }
+          dlg.close();
+          if (onSuccess && onSuccess(r, data)) { load(); return; }
+          done(r);
+        });
+      });
+    });
+  }
+  var ACTION_URL = function () { return BASE + "/api/" + rec.id + "/action"; };
+  function fld(name, label, opts) {
+    opts = opts || {};
+    var id = "mf-" + name, v = opts.value == null ? "" : opts.value, req = opts.req ? '<span class="req">*</span>' : "";
+    var input;
+    if (opts.type === "textarea") input = '<textarea id="' + id + '" name="' + name + '" rows="' + (opts.rows || 3) + '" maxlength="' + (opts.max || 10000) + '"' + (opts.ph ? ' placeholder="' + esc(opts.ph) + '"' : "") + ">" + esc(v) + "</textarea>";
+    else if (opts.type === "select") input = '<select id="' + id + '" name="' + name + '"><option value="">— Сонгох —</option>' + opts.options.map(function (o) {
+      return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(v) ? " selected" : "") + ">" + esc(o[1]) + "</option>"; }).join("") + "</select>";
+    else input = '<input id="' + id + '" name="' + name + '" type="' + (opts.type || "text") + '" value="' + esc(v) + '"' + (opts.max ? ' maxlength="' + opts.max + '"' : "") +
+      (opts.min ? ' min="' + opts.min + '"' : "") + (opts.maxDate ? ' max="' + opts.maxDate + '"' : "") + (opts.ph ? ' placeholder="' + esc(opts.ph) + '"' : "") + ">";
+    return '<div class="field' + (opts.full === false ? "" : " full") + '"' + (opts.attr || "") + '><label for="' + id + '">' + esc(label) + (opts.noReq ? "" : req) + "</label>" + input +
+      (opts.hint ? '<span class="hint">' + esc(opts.hint) + "</span>" : "") + '<span class="err-msg" data-err="' + name + '"></span></div>';
+  }
+  function grid(html) { return '<div class="m-grid">' + html + "</div>"; }
+  function formData(f, names) {
+    var d = {};
+    names.forEach(function (n) { var el = f.querySelector('[name="' + n + '"]'); if (el) d[n] = el.type === "radio" ? ((f.querySelector('[name="' + n + '"]:checked') || {}).value || "") : el.value.trim(); });
+    return d;
+  }
+  function requireFields(f, d, names) {
+    var e = {};
+    names.forEach(function (n) { if (!d[n]) e[n] = "Заавал бөглөнө."; });
+    return VR.setErrors(f, e);
+  }
+  var YN_OPTS = [["yes", "Тийм"], ["no", "Үгүй"]];
+
+  function simple(action, title, help, noteRequired) {
+    var body = '<p class="hint" style="margin:0">' + esc(help) + "</p>" +
+      fld("note", noteRequired ? "Тайлбар / шалтгаан" : "Тайлбар", { type: "textarea", req: noteRequired, max: 5000 });
+    var dlg = modal(title, rec.ref + " · " + rec.title, body, rec.actionLabels[action]);
+    submitTo(dlg, ACTION_URL(), function (f) {
+      var d = formData(f, ["note"]);
+      if (noteRequired && !requireFields(f, d, ["note"])) return null;
+      d.action = action; return d;
+    });
+    VR.showModal(dlg, dlg.querySelector("textarea"));
+  }
+
+  var IN_USE_OPTS = [["yes", "Тийм"], ["no", "Үгүй"]];
+  var ENV_OPTS = [["yes", "Тийм"], ["no", "Үгүй"], ["unknown", "Тодорхойгүй"]];
+  var COMPROMISE_OPTS = [["yes", "Тийм"], ["no", "Үгүй"], ["checking", "Шалгаж байна"]];
+
+  function evidenceFiles() { return rec.files.filter(function (f) { return f.category === "as_evidence"; }); }
+  var EV_ACCEPT = ".png,.jpg,.jpeg,.gif,.webp,.xls,.xlsx,.doc,.docx,.pdf,.txt";
+  var EV_RE = /\.(png|jpe?g|gif|webp|xlsx?|docx?|pdf|txt)$/i, IMG_RE = /\.(png|jpe?g|gif|webp)$/i;
+  function extOf(name) { var m = /\.([a-z0-9]+)$/i.exec(name || ""); return m ? m[1].toUpperCase() : "FILE"; }
+  // Image → thumbnail; other types (Excel, Word, PDF, TXT) → a tile with the type and file name.
+  function evTile(name, src) {
+    return IMG_RE.test(name) ? '<img src="' + src + '" alt="' + esc(name) + '" loading="lazy">'
+      : '<span class="ev-file"><b>' + esc(extOf(name)) + "</b><small>" + esc(name) + "</small></span>";
+  }
+  function evidenceThumbs(list) {
+    return '<ul class="ev-thumbs">' + list.map(function (f) {
+      var href = BASE + "/" + rec.id + "/files/" + f.id;
+      return '<li><a href="' + href + '" title="' + esc(f.name) + '">' + evTile(f.name, href) + "</a></li>";
+    }).join("") + "</ul>";
+  }
+  function evidenceField(def) {
+    var have = evidenceFiles();
+    return '<div class="field full"><label for="mf-evidence_files">' + esc(def.label) + (def.required ? '<span class="req">*</span>' : "") + "</label>" +
+      '<label class="file-field" data-field="evidence_files" tabindex="-1">' +
+        '<input id="mf-evidence_files" class="file-field-input" type="file" accept="' + EV_ACCEPT + '" multiple aria-describedby="mf-evidence_files-hint">' +
+        '<svg class="ico" aria-hidden="true"><use href="#i-upload"/></svg>' +
+        '<span class="file-field-text" data-ev-text>' + (have.length ? have.length + " файл хавсаргасан · нэмэх" : "Файл сонгох…") + "</span>" +
+        '<span class="file-field-btn">Сонгох</span>' +
+      "</label>" +
+      (have.length ? evidenceThumbs(have) : "") +
+      '<ul class="ev-thumbs" data-ev-new></ul>' +
+      '<span class="hint" id="mf-evidence_files-hint">' + esc(def.hint || "") + "</span>" +
+      '<span class="err-msg" data-err="evidence_files"></span></div>';
+  }
+
+  /* Field from the form designer schema rendered with fld(); extra = fixed rendering details of a built-in. */
+  function schemaFld(f, extra, value) {
+    var o = { req: f.required, full: !!f.full, hint: f.hint || "", ph: f.ph || "", value: value };
+    if (!f.builtin) {
+      if (f.type === "textarea") { o.type = "textarea"; o.max = f.max || 5000; }
+      else if (f.type === "select" || f.type === "yesno") { o.type = "select"; o.options = VR.customOptions(f); }
+      else if (f.type === "date" || f.type === "url" || f.type === "email") o.type = f.type;
+      else o.max = f.type === "number" ? 40 : (f.max || 300);
+    }
+    Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
+    if (o.hint === "") delete o.hint;
+    if (o.ph === "") delete o.ph;
+    return fld(f.key, f.label, o);
+  }
+  /* Sections of a designer-managed form. render(f) returns the html of a built-in (null → generic field). */
+  function schemaBody(formKey, render, values) {
+    var multi = VR.form(formKey).sections.length > 1;
+    return VR.form(formKey).sections.map(function (s) {
+      var vis = s.fields.filter(function (f) { return !f.hidden; });
+      var html = vis.map(function (f) {
+        var h = f.builtin ? render(f) : null;
+        return h != null ? h : schemaFld(f, null, (values || {})[f.key] || "");
+      }).join("");
+      return (multi || s.desc ? '<h3 class="m-sec">' + esc(s.title) + "</h3>" : "") +
+        (s.desc ? '<div class="m-alert info">' + esc(s.desc) + "</div>" : "") + grid(html);
+    }).join("");
+  }
+  /* Posted names + required names of the visible plain fields of a form (built-in blocks excluded). */
+  function schemaNames(formKey) {
+    var names = [], required = [];
+    VR.formFields(formKey).forEach(function (f) {
+      if (f.hidden || f.block) return;
+      names.push(f.key);
+      if (f.required) required.push(f.key);
+    });
+    return { names: names, required: required };
+  }
+
+  function openAssessment() {
+    var a = rec.assessment;
+    var ENG = {
+      affected_asset: { max: 300, value: rec.affectedAsset || (rec.assetInfo ? rec.assetInfo.name : "") },
+      owner_custodian: { max: 300, value: rec.ownerCustodian },
+      in_use: { type: "select", options: IN_USE_OPTS, value: rec.inUse },
+      env_present: { type: "select", options: ENV_OPTS, value: rec.envPresent },
+      compromise_signs: { type: "select", options: COMPROMISE_OPTS, value: rec.compromiseSigns },
+      as_scope: { type: "textarea", value: a.as_scope },
+      as_version: { value: a.as_version, max: 10000 },
+      as_internet_facing: { type: "select", options: YN_OPTS, value: a.as_internet_facing },
+      as_patch_available: { type: "select", options: YN_OPTS.concat([["unknown", "Тодорхойгүй"]]), value: a.as_patch_available },
+      as_test_method: { type: "textarea", value: a.as_test_method },
+      as_exploited: { type: "select", options: YN_OPTS, value: a.as_exploited },
+      as_incident_ref: { value: a.as_incident_ref, max: 300, attr: ' data-show="exploited" hidden' },
+      as_conclusion: { type: "textarea", value: a.as_conclusion }
+    };
+    var body = schemaBody("engineer", function (f) {
+      if (f.key === "evidence_files") return evidenceField(f);
+      return ENG[f.key] ? schemaFld(f, ENG[f.key]) : null;
+    }, rec.custom);
+    var buttons = [];
+    if (has("save_assessment")) buttons.push({ label: "Ноорог хадгалах", value: "save_assessment" });
+    if (has("submit_assessment")) buttons.push({ label: "Илгээх", value: "submit_assessment", primary: true });
+    var dlg = modal("Хөрөнгө ба хариуцлага, үнэлгээ (Инженер)", rec.ref + " · " + rec.title, body, buttons, true);
+    var form = dlg.querySelector("form");
+    function sync() {
+      var box = form.querySelector('[data-show="exploited"]'), ex = form.querySelector('[name="as_exploited"]');
+      if (box && ex) box.hidden = ex.value !== "yes";
+    }
+    form.addEventListener("change", sync); sync();
+    var sn = schemaNames("engineer"), names = sn.names;
+    var required = sn.required.filter(function (n) { return n !== "as_incident_ref"; });
+    var evDef = VR.formField("engineer", "evidence_files");
+    var evRequired = !!(evDef && !evDef.hidden && evDef.required);
+    var evInput = form.querySelector("#mf-evidence_files"), evPreview = form.querySelector("[data-ev-new]");
+    var evText = form.querySelector("[data-ev-text]"), evHave = evidenceFiles().length, evUrls = [];
+    if (evInput) evInput.addEventListener("change", function () {
+      evUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+      evUrls = [];
+      var n = evInput.files.length;
+      evText.textContent = n ? n + " файл сонгогдсон" + (evHave ? " (+" + evHave + " хавсаргасан)" : "")
+        : (evHave ? evHave + " файл хавсаргасан · нэмэх" : "Файл сонгох…");
+      evText.classList.toggle("has-value", n > 0);
+      evPreview.innerHTML = Array.prototype.map.call(evInput.files, function (f) {
+        var u = "";
+        if (IMG_RE.test(f.name)) { u = URL.createObjectURL(f); evUrls.push(u); }
+        return '<li class="ev-new"><span title="' + esc(f.name) + '">' + evTile(f.name, u) + "</span></li>";
+      }).join("");
+      if (n) VR.setErrors(form.querySelector('[data-err="evidence_files"]').parentNode, {});
+    });
+    dlg.addEventListener("close", function () { evUrls.forEach(function (u) { URL.revokeObjectURL(u); }); });
+    submitTo(dlg, ACTION_URL(), function (f, which) {
+      var d = formData(f, names);
+      if (which === "submit_assessment") {
+        var e = {};
+        required.forEach(function (n) { if (!d[n]) e[n] = "Заавал бөглөнө."; });
+        if (evRequired && !evidenceFiles().length && !(evInput && evInput.files.length)) e.evidence_files = "Нотолгооны файлыг хавсаргана уу.";
+        if (!VR.setErrors(f, e)) return null;
+      }
+      d.action = which || "save_assessment"; return d;
+    }, function (d) {
+      var confirmFirst = d.action !== "submit_assessment" ? Promise.resolve(true) :
+        VR.confirm({ title: "InfoSec-д илгээх үү?", body: "Илгээсний дараа мэдээллийг InfoSec хянаж, хөрөнгөд нөлөөлсөн эсэхийг тодорхойлно. Шалгасан огноо автоматаар бүртгэгдэнэ.", confirmLabel: "Илгээх" });
+      return confirmFirst.then(function (go) {
+        if (!go || !evInput || !evInput.files.length) return go;
+        // Upload the selected evidence images first, then save / submit the form.
+        var big = [], bad = [], fd = new FormData();
+        Array.prototype.forEach.call(evInput.files, function (f) {
+          if (f.size > 20 * 1048576) big.push(f.name);
+          if (!EV_RE.test(f.name)) bad.push(f.name);
+          fd.append("files", f, f.name);
+        });
+        var alertBox = form.querySelector("[data-alert]");
+        if (bad.length) { alertBox.textContent = "Зөвшөөрөгдөөгүй файлын төрөл (зураг, Excel, Word, PDF, TXT): " + bad.join(", "); return false; }
+        if (big.length) { alertBox.textContent = "20 МБ-аас их файл: " + big.join(", "); return false; }
+        fd.append("category", "as_evidence");
+        return VR.api(BASE + "/api/" + rec.id + "/files", { form: fd }).then(function (r) {
+          if (!r.ok) { alertBox.textContent = r.data.error || "Файл хуулж чадсангүй."; return false; }
+          return true;
+        });
+      });
+    }, function (r, d) {
+      if (d.action !== "submit_assessment") return false;  // drafts keep the short toast
+      showSubmitted(r.data);
+      return true;
+    });
+    VR.showModal(dlg, form.querySelector("input, textarea"));
+  }
+
+  // Shown after the engineer submits: the form has closed; this confirms what happened and what comes next.
+  function showSubmitted(data) {
+    var dlg = document.createElement("dialog");
+    dlg.className = "modal narrow";
+    dlg.setAttribute("aria-labelledby", "ok-title");
+    dlg.setAttribute("aria-describedby", "ok-body");
+    dlg.innerHTML = '<form method="dialog"><div class="m-body ok-body">' +
+      '<span class="ok-icon" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></span>' +
+      '<h2 id="ok-title">Амжилттай илгээгдлээ</h2>' +
+      '<p id="ok-body">Хөрөнгө ба хариуцлагын мэдээлэл, үнэлгээ InfoSec-д илгээгдлээ.</p>' +
+      '<dl class="ok-facts"><div><dt>Бүртгэл</dt><dd class="mono">' + esc(rec.ref) + "</dd></div>" +
+      "<div><dt>Шалгасан огноо</dt><dd>" + esc(VR.fmtDateTime(data.submittedAt || "")) + "</dd></div>" +
+      "<div><dt>Дараагийн алхам</dt><dd>InfoSec хөрөнгөд нөлөөлсөн эсэхийг тодорхойлж, эрсдэлийн үнэлгээ хийнэ.</dd></div></dl>" +
+      '</div><div class="m-foot"><button type="submit" class="btn-primary" value="ok">Ойлголоо</button></div></form>';
+    dlg.addEventListener("close", function () { dlg.remove(); });
+    VR.showModal(dlg, dlg.querySelector("button"));
+  }
+
+  function openRisk() {
+    var rk = rec.risk, cfg = rec.riskConfig;
+    var opts15 = [1, 2, 3, 4, 5].map(function (n) { return [String(n), String(n)]; });
+    var impacts = cfg.criteria.map(function (c, i) {
+      return fld("impact_" + (i + 1), (i + 1) + ". " + c, { type: "select", req: true, options: opts15, value: rk.impacts[i] != null ? rk.impacts[i] : "", full: false });
+    }).join("");
+    var decisions = Object.keys(DECISION).map(function (k) {
+      var help = { mitigate: "Засварын шат (Алхам 5) руу шилжинэ.", transfer: "Нотлох баримт (гэрээ, даатгал, нийлүүлэгч) хавсаргасан байх ёстой — бүртгэл хаагдана.",
+        avoid: "Инженер системийг зогсоож / үйлчилгээг зогсоож баталгаажуулна, InfoSec хянаж хаана.", accept: "CTO-ийн зөвшөөрөл шаардлагатай. Хугацаа дуусахад дахин үнэлнэ." }[k];
+      return '<label class="opt"><input type="radio" name="ra_decision" value="' + k + '"' + (rk.decision === k ? " checked" : "") + "><span><b>" + esc(DECISION[k]) + "</b><small>" + esc(help) + "</small></span></label>";
+    }).join("");
+    var askAffected = rec.impactDecision.affected !== "yes";
+    var affectedPart = !askAffected ? "" :
+      '<div class="ra-box"><b>' + esc(rec.affectedAsset || (rec.assetInfo ? rec.assetInfo.name : "—")) + "</b>" +
+        "Манай орчинд байгаа эсэх: " + esc(ENV_PRESENT[rec.envPresent] || "—") + " · Халдлагын шинж тэмдэг: " + esc(COMPROMISE[rec.compromiseSigns] || "—") + "</div>" +
+      grid(fld("as_affected", "Хөрөнгөд нөлөөлсөн эсэх", { type: "select", req: true, options: YN_OPTS, value: rec.impactDecision.affected || "", full: false,
+        hint: "Үгүй бол тайлбар бичиж «Нөлөөлөөгүй – Хаагдсан» болгоно (нотлох баримтыг «Нотлох баримт» хэсэгт хавсаргана)." })) +
+      fld("ia_note", "Нөлөөллийн тайлбар", { type: "textarea", max: 5000, value: rec.impactDecision.note || "", attr: ' data-show="ia-note"',
+        hint: "Үгүй гэж сонгосон бол заавал бичнэ." });
+    var body = affectedPart + '<div data-risk-part>' +
+      '<div class="m-alert info">Үнэлгээний хугацаа: <b>' + esc(rk.due || "—") + "</b> (Critical 1, High 3, бусад 5 ажлын өдөр). Засварлах SLA (" + esc(rec.due || "—") + ") энэ хугацаанд зогсохгүй.</div>" +
+      schemaBody("risk", function (f) {
+        if (f.key === "ra_threat") return schemaFld(f, { type: "textarea", value: rk.threat, max: 5000 });
+        if (f.key === "impacts") return '<fieldset class="fs full"><legend>' + esc(f.label) + "</legend>" + grid(impacts) +
+          (f.hint ? '<span class="hint">' + esc(f.hint) + "</span>" : "") + "</fieldset>";
+        if (f.key === "ra_likelihood") return fld("ra_likelihood", f.label, { type: "select", req: true, options: opts15, value: rk.likelihood || "", full: false, hint: f.hint || undefined }) +
+          '<div class="field"><span class="label">Эрсдэлийн түвшин (5×5)</span><output class="derived" data-level aria-live="polite">—</output></div>' +
+          '<div class="full" data-matrix></div>';
+        if (f.key === "ra_decision") return '<div class="field full" role="radiogroup" aria-label="' + esc(f.label) + '"><span class="label">' + esc(f.label) + '</span><div class="opt-list">' + decisions + "</div>" +
+          (f.hint ? '<span class="hint">' + esc(f.hint) + "</span>" : "") + '<span class="err-msg" data-err="ra_decision"></span></div>';
+        if (f.key === "ra_decision_note") return schemaFld(f, { type: "textarea", value: rk.decisionNote, max: 5000, noReq: !f.required });
+        if (f.key === "risk_accept_until") return fld("risk_accept_until", f.label, { type: "date", req: true, min: VR.addDays(VR.todayIso, 1),
+          value: (rec.riskAccept && rec.riskAccept.until) || "", hint: f.hint || undefined, attr: ' data-show="accept" hidden' });
+        return null;
+      }, rec.custom) + "</div>";
+    var dlg = modal("Эрсдэлийн үнэлгээ (MAS-14)", rec.ref + " · " + rec.title, body,
+      [{ label: "Ноорог хадгалах", value: "draft" }, { label: "Шийдвэр батлах", value: "decide", primary: true }], true);
+    var form = dlg.querySelector("form");
+    function sync() {
+      var d = formData(form, ["ra_likelihood", "ra_decision"]), vals = [];
+      for (var i = 1; i <= 8; i++) vals.push(parseInt(form.querySelector('[name="impact_' + i + '"]').value, 10));
+      var complete = vals.every(function (v) { return v >= 1; }) && d.ra_likelihood;
+      var imp = complete ? Math.max.apply(null, vals) : null, lk = complete ? +d.ra_likelihood : null;
+      var sc = complete ? imp * lk : null, lv = !complete ? "" : (sc <= cfg.low_max ? "low" : (sc <= cfg.medium_max ? "medium" : "high"));
+      form.querySelector("[data-level]").innerHTML = complete ? levelPill(lv) + ' <span class="muted">' + imp + " × " + lk + " = " + sc + "</span>" : '<span class="muted">Бүх шалгуурыг бөглөнө үү</span>';
+      form.querySelector("[data-matrix]").innerHTML = matrixHtml(imp, lk, cfg);
+      form.querySelector('[data-show="accept"]').hidden = d.ra_decision !== "accept";
+      if (askAffected) {
+        var notAffected = form.querySelector('[name="as_affected"]').value === "no";
+        form.querySelector("[data-risk-part]").hidden = notAffected;  // Үгүй → no risk assessment, the record closes
+        var decideBtn = form.querySelector('[data-submit][value="decide"]');
+        if (decideBtn) decideBtn.textContent = notAffected ? "Нөлөөлөөгүй — хаах" : "Шийдвэр батлах";
+        var draftBtn = form.querySelector('[data-submit][value="draft"]');
+        if (draftBtn) draftBtn.hidden = notAffected;
+      }
+    }
+    form.addEventListener("change", sync); sync();
+    if (askAffected) form.querySelector('[name="as_affected"]').addEventListener("change", function () {
+      VR.setErrors(form, {});  // a new answer starts clean: drop errors from the other branch
+      form.querySelector("[data-alert]").textContent = "";
+    });
+    submitTo(dlg, ACTION_URL(), function (f, which) {
+      var sn = schemaNames("risk");
+      var names = ["ra_likelihood", "ra_decision", "risk_accept_until"].concat(sn.names);
+      for (var i = 1; i <= 8; i++) names.push("impact_" + i);
+      if (askAffected) names.push("as_affected", "ia_note");
+      var d = formData(f, names);
+      if (which === "draft") { d.ra_decision = ""; d.action = "risk_assess"; return d; }
+      if (askAffected && d.as_affected === "no") {
+        if (!requireFields(f, d, ["ia_note"])) return null;
+        return { action: "risk_assess", as_affected: "no", ia_note: d.ia_note };
+      }
+      var req = ["ra_likelihood", "ra_decision"].concat(sn.required);
+      for (var j = 1; j <= 8; j++) req.push("impact_" + j);
+      if (askAffected) req.push("as_affected");
+      if (d.ra_decision === "accept") req.push("risk_accept_until");
+      if (["transfer", "avoid", "accept"].indexOf(d.ra_decision) >= 0 && req.indexOf("ra_decision_note") < 0) req.push("ra_decision_note");
+      if (!requireFields(f, d, req)) return null;
+      d.action = "risk_assess"; return d;
+    }, function (d) {
+      if (d.as_affected === "no")
+        return VR.confirm({ title: "Нөлөөлөөгүй гэж хаах уу?", body: rec.ref + " бүртгэлийг «" + VR.STATUS.not_affected + "» төлөвтэй хаана. IT-ийн дарга, CTO-д мэдэгдэл очно.", confirmLabel: "Хаах" });
+      if (!d.ra_decision) return Promise.resolve(true);
+      return VR.confirm({ title: "Шийдвэр батлах уу?", body: DECISION[d.ra_decision] + " — " + rec.ref, confirmLabel: "Батлах" });
+    });
+    VR.showModal(dlg, form.querySelector(askAffected ? "select" : "textarea, select"));
+  }
+
+  function openCto() {
+    var ra = rec.riskAccept || {}, rk = rec.risk;
+    var body = '<div class="ra-box"><b>Хүсэлт: ' + esc(ra.requestedBy || "InfoSec") + "</b>Эрсдэл: " + (rk.level ? esc(LEVEL[rk.level]) + " (" + rk.score + ")" : "—") +
+      "<br>" + esc(ra.reason || "") + "</div>" +
+      '<div class="field full" role="radiogroup"><span class="label">Шийдвэр<span class="req">*</span></span><div class="opt-list">' +
+      (has("cto_approve") ? '<label class="opt"><input type="radio" name="decision" value="cto_approve" checked><span><b>Зөвшөөрөх</b><small>Төлөв «' + esc(VR.STATUS.accepted) + "» болно. Хугацаа дуусахад дахин үнэлнэ.</small></span></label>" : "") +
+      (has("cto_reject") ? '<label class="opt"><input type="radio" name="decision" value="cto_reject"><span><b>Татгалзах</b><small>Эрсдэлийн үнэлгээнд (Алхам 4) буцна.</small></span></label>' : "") +
+      "</div></div>" +
+      fld("risk_accept_until", "Хүлээн зөвшөөрөх хугацаа (хүртэл)", { type: "date", req: true, min: VR.addDays(VR.todayIso, 1), value: ra.until || "", attr: ' data-show="approve"' }) +
+      fld("note", "Тайлбар", { type: "textarea", max: 5000, noReq: true });
+    var dlg = modal("Эрсдэл хүлээн зөвшөөрөх (CTO)", rec.ref + " · " + rec.title, body, "Илгээх");
+    var form = dlg.querySelector("form");
+    function sync() { form.querySelector('[data-show="approve"]').hidden = (form.querySelector('[name="decision"]:checked') || {}).value !== "cto_approve"; }
+    form.addEventListener("change", sync); sync();
+    submitTo(dlg, ACTION_URL(), function (f) {
+      var d = formData(f, ["decision", "risk_accept_until", "note"]);
+      if (d.decision === "cto_reject" && !requireFields(f, d, ["note"])) return null;
+      if (d.decision === "cto_approve" && !requireFields(f, d, ["risk_accept_until"])) return null;
+      d.action = d.decision; return d;
+    });
+    VR.showModal(dlg, form.querySelector('[name="decision"]'));
+  }
+
+  function openAvoidConfirm() {
+    var body = '<p class="hint" style="margin:0">Эрсдэлээс зайлсхийх шийдвэрийн дагуу системийг зогсоосон / үйлчилгээг зогсоосныг баталгаажуулна. Нотлох баримтыг хавсаргана уу.</p>' +
+      fld("avoid_note", "Зогсоосон систем / үйлчилгээ, хийсэн ажил", { type: "textarea", req: true, max: 5000, value: rec.remediation.avoidNote });
+    var dlg = modal("Систем зогсоосныг баталгаажуулах", rec.ref + " · " + rec.title, body, rec.actionLabels.avoid_confirm);
+    submitTo(dlg, ACTION_URL(), function (f) { var d = formData(f, ["avoid_note"]); if (!requireFields(f, d, ["avoid_note"])) return null; d.action = "avoid_confirm"; return d; });
+    VR.showModal(dlg, dlg.querySelector("textarea"));
+  }
+  function openAvoidClose() {
+    var body = '<div class="ra-box"><b>Инженерийн баталгаажуулалт</b>' + esc(rec.remediation.avoidNote || "—") + "</div>" +
+      fld("closure_comment", "Хаалтын тайлбар", { type: "textarea", req: true }) + fld("residual_risk", "Үлдэгдэл эрсдэл", { type: "textarea", noReq: true, max: 5000 });
+    var dlg = modal("Хянаж хаах", rec.ref + " · " + rec.title, body, "Хаах");
+    submitTo(dlg, ACTION_URL(), function (f) { var d = formData(f, ["closure_comment", "residual_risk"]); if (!requireFields(f, d, ["closure_comment"])) return null; d.action = "avoid_close"; return d; });
+    VR.showModal(dlg, dlg.querySelector("textarea"));
+  }
+
+  function openRemediation() {
+    var rm = rec.remediation;
+    var outcomes = [
+      ["save_remediation", "Төлөвлөгөө хадгалах", "Төлөв өөрчлөгдөхгүй."],
+      ["submit_fix", "Засвар хийсэн — баталгаажуулалтад илгээх", "InfoSec дахин скан, хувилбар шалгана."],
+      ["submit_temp", "Түр хамгаалалт (нөхөх хяналт) хэрэгжүүлсэн", "Шууд засварлах боломжгүй үед. Хүчинтэй хугацааг заана."],
+      ["cannot_remediate", "Засварлах боломжгүй — дахин үнэлгээнд буцаах", "Шалтгааныг тайлбарлана. InfoSec эрсдэлийг дахин үнэлнэ."]
+    ].filter(function (o) { return has(o[0]); });
+    var body = grid(
+      fld("rm_plan", "Засварын төлөвлөгөө", { type: "textarea", req: true, value: rm.plan }) +
+      fld("rm_actions", "Авах арга хэмжээ", { type: "textarea", req: true, value: rm.actions }) +
+      fld("rm_target_date", "Дуусгах товлосон огноо", { type: "date", req: true, value: rm.targetDate, full: false }) +
+      fld("rm_change_ref", "Өөрчлөлтийн дугаар (Change ref.)", { req: true, value: rm.changeRef, max: 300, full: false, ph: "CHG-…" })) +
+      '<div class="field full" role="radiogroup"><span class="label">Үйлдэл<span class="req">*</span></span><div class="opt-list">' + outcomes.map(function (o, i) {
+        return '<label class="opt"><input type="radio" name="outcome" value="' + o[0] + '"' + (i === 0 ? " checked" : "") + "><span><b>" + esc(o[1]) + "</b><small>" + esc(o[2]) + "</small></span></label>";
+      }).join("") + "</div></div>" +
+      '<div data-show="submit_fix" hidden>' + fld("remediated_date", "Зассан огноо", { type: "date", req: true, value: rec.remediatedDate || VR.todayIso, maxDate: VR.todayIso }) + "</div>" +
+      '<div data-show="submit_temp" hidden class="m-stack">' + fld("tm_controls", "Түр хамгаалалт (нөхөх хяналт)", { type: "textarea", req: true, value: rm.tmControls, ph: "WAF дүрэм, сүлжээний хязгаарлалт, тохиргоо…" }) +
+        fld("tm_until", "Хүчинтэй хугацаа (хүртэл)", { type: "date", req: true, min: VR.addDays(VR.todayIso, 1), value: rm.tmUntil }) + "</div>" +
+      '<div data-show="cannot_remediate" hidden>' + fld("note", "Засварлах боломжгүй шалтгаан", { type: "textarea", req: true, max: 5000 }) + "</div>" +
+      '<p class="hint" style="margin:0">Хавсралт (тест, дэлгэцийн зураг, өөрчлөлтийн баримт)-ыг «Нотлох баримт» хэсэгт оруулна уу.</p>';
+    var dlg = modal("Засвар / Түр хамгаалалт (Инженер)", rec.ref + " · " + rec.title, body, "Хадгалах", true);
+    var form = dlg.querySelector("form");
+    function sync() {
+      var o = (form.querySelector('[name="outcome"]:checked') || {}).value;
+      Array.prototype.forEach.call(form.querySelectorAll("[data-show]"), function (x) { x.hidden = x.getAttribute("data-show") !== o; });
+    }
+    form.addEventListener("change", sync); sync();
+    submitTo(dlg, ACTION_URL(), function (f) {
+      var o = (f.querySelector('[name="outcome"]:checked') || {}).value;
+      var base = ["rm_plan", "rm_actions", "rm_target_date", "rm_change_ref"];
+      var d = formData(f, base);
+      if (o === "submit_fix") { d.remediated_date = f.querySelector('[name="remediated_date"]').value; if (!requireFields(f, d, base.concat(["remediated_date"]))) return null; }
+      if (o === "submit_temp") { d.tm_controls = f.querySelector('[name="tm_controls"]').value.trim(); d.tm_until = f.querySelector('[name="tm_until"]').value; if (!requireFields(f, d, ["tm_controls", "tm_until"])) return null; }
+      if (o === "cannot_remediate") { d = { note: f.querySelector('[name="note"]').value.trim() }; if (!requireFields(f, d, ["note"])) return null; }
+      d.action = o; return d;
+    });
+    VR.showModal(dlg, form.querySelector("textarea"));
+  }
+
+  function openVerify() {
+    var rm = rec.remediation;
+    var outcomes = [
+      ["close", "Засагдсан — баталгаажуулж хаах", "Дахин скан / хувилбарын шалгалтаар засагдсан нь батлагдсан."],
+      ["verify_temp", "Түр хамгаалалт хэрэгжсэн", "Төлөв «Түр хамгаалалт» (" + (rm.tmUntil || "—") + " хүртэл). Patch гарвал эсвэл хугацаа дуусвал засвар руу буцна."],
+      ["verify_fail", "Засагдаагүй — засвар руу буцаах", "Инженерт тайлбартай буцна."]
+    ].filter(function (o) { return has(o[0]); });
+    var body = '<div class="ra-box"><b>' + (rm.fixType === "temp" ? "Түр хамгаалалт" : "Засвар") + "</b>" +
+      (rm.fixType === "temp" ? esc(rm.tmControls || "") + "<br>Хүчинтэй: " + esc(rm.tmUntil || "—") : esc(rm.actions || rm.plan || "") + (rm.changeRef ? "<br>Өөрчлөлт: " + esc(rm.changeRef) : "")) + "</div>" +
+      '<div class="field full" role="radiogroup"><span class="label">Үр дүн<span class="req">*</span></span><div class="opt-list">' + outcomes.map(function (o, i) {
+        return '<label class="opt"><input type="radio" name="outcome" value="' + o[0] + '"' + (i === 0 ? " checked" : "") + "><span><b>" + esc(o[1]) + "</b><small>" + esc(o[2]) + "</small></span></label>";
+      }).join("") + "</div></div>" +
+      fld("vf_note", "Баталгаажуулалтын тэмдэглэл (дахин скан, хувилбарын шалгалт)", { type: "textarea", req: true, value: rec.closure.vfNote }) +
+      '<div data-show="close" class="m-stack">' +
+        fld("closure_comment", "Хаалтын тайлбар", { type: "textarea", req: true }) +
+        fld("residual_risk", "Үлдэгдэл эрсдэл", { type: "textarea", req: true, max: 5000, ph: "Байхгүй бол «Байхгүй»" }) +
+        fld("risk_status", "Эрсдэлийн төлөв", { type: "select", req: true, options: [["mitigated", "Бууруулсан"], ["residual", "Үлдэгдэл эрсдэлтэй"]] }) + "</div>";
+    var dlg = modal("Баталгаажуулалт (InfoSec)", rec.ref + " · " + rec.title, body, "Илгээх", true);
+    var form = dlg.querySelector("form");
+    function sync() {
+      var o = (form.querySelector('[name="outcome"]:checked') || {}).value;
+      form.querySelector('[data-show="close"]').hidden = o !== "close";
+    }
+    form.addEventListener("change", sync); sync();
+    submitTo(dlg, ACTION_URL(), function (f) {
+      var o = (f.querySelector('[name="outcome"]:checked') || {}).value;
+      var d = formData(f, ["vf_note", "closure_comment", "residual_risk", "risk_status"]);
+      var req = o === "close" ? ["vf_note", "closure_comment", "residual_risk", "risk_status"] : (o === "verify_fail" ? ["vf_note"] : []);
+      if (!requireFields(f, d, req)) return null;
+      d.action = o; return d;
+    }, function (d) {
+      if (d.action === "close") return VR.confirm({ title: "Бүртгэлийг хаах уу?", body: rec.ref + " хаагдаж, IT-ийн дарга, CTO-д мэдэгдэл очно.", confirmLabel: "Хаах" });
+      return Promise.resolve(true);
+    });
+    VR.showModal(dlg, form.querySelector('[name="outcome"]'));
+  }
+
+  function openAssign() {
+    VR.options().then(function (O) {
+      var engineers = O.engineers || [];
+      var body =
+        '<div class="field"><span class="label">Мэдээллийн хөрөнгө / Систем</span><div>' + (rec.assetInfo ? esc(rec.assetInfo.name) + (rec.assetInfo.id ? ' <span class="muted">#' + rec.assetInfo.id + "</span>" : "") : nil("Холбоогүй")) + "</div></div>" +
+        (engineers.length ? "" : '<div class="m-alert">Инженер эрхтэй хэрэглэгч алга. Админ (InfoSec) Тохиргоо → Эрх олгох хэсэгт инженер эрх олгоно.</div>') +
+        '<div class="field"><label for="as-user">Хариуцах инженер<span class="req">*</span></label><div class="combo"><input id="as-user" type="text" placeholder="Инженерийн нэрээр хайх…"><input type="hidden" name="assignee_id"></div><span class="err-msg" data-err="assignee_id"></span></div>' +
+        '<div class="field"><label for="as-note">Тайлбар</label><textarea id="as-note" name="note" maxlength="5000" rows="3" placeholder="Инженерт өгөх заавар, анхаарах зүйл"></textarea></div>' +
+        '<p class="hint" style="margin:0">Томилогдсон инженерт и-мэйлээр мэдэгдэл очно.' + (rec.status === "new" ? " Төлөв «" + esc(VR.STATUS.assigned) + "» болно." : "") + "</p>";
+      var dlg = modal(rec.assignee ? "Инженер солих" : "Инженер томилох", rec.ref + " · " + rec.title, body, rec.assignee ? "Солих" : "Томилох");
+      var form = dlg.querySelector("form");
+      var combo = VR.combo(form.querySelector("#as-user"), form.querySelector('[name="assignee_id"]'),
+        engineers.map(function (u) { return { id: u.id, label: u.name, sub: u.dept }; }));
+      if (rec.assignee) combo.setValue(rec.assignee.id, true);
+      submitTo(dlg, BASE + "/api/" + rec.id + "/assign", function (f) {
+        var id = f.querySelector('[name="assignee_id"]').value;
+        if (!id) { VR.setErrors(f, { assignee_id: "Жагсаалтаас сонгоно уу." }); return null; }
+        return { assignee_id: id, note: f.querySelector('[name="note"]').value.trim() };
+      });
+      VR.showModal(dlg, form.querySelector("#as-user"));
+    }, function (err) { VR.toast(err.message || "Алдаа гарлаа.", "err"); });
+  }
+
+  function openComment() {
+    var body = '<div class="field"><label for="cm-text">Сэтгэгдэл<span class="req">*</span></label><textarea id="cm-text" name="comment" maxlength="5000" rows="5" placeholder="Хяналтын тэмдэглэл, асуулт, нэмэлт мэдээлэл"></textarea><span class="err-msg" data-err="comment"></span></div>' +
+      '<p class="hint" style="margin:0">Сэтгэгдэл түүхэнд бүртгэгдэх бөгөөд засах, устгах боломжгүй.</p>';
+    var dlg = modal("Сэтгэгдэл нэмэх", rec.ref + " · " + rec.title, body, "Нэмэх");
+    submitTo(dlg, BASE + "/api/" + rec.id + "/comment", function (f) {
+      var t = f.querySelector('[name="comment"]').value.trim();
+      if (!t) { VR.setErrors(f, { comment: "Сэтгэгдэл бичнэ үү." }); return null; }
+      return { comment: t };
+    });
+    VR.showModal(dlg, dlg.querySelector("textarea"));
+  }
+
+  function deleteRecord() {
+    VR.confirm({
+      title: "Бүртгэл устгах уу?",
+      body: rec.ref + " — «" + rec.title + "» бүртгэлийг жагсаалтаас устгана. Түүх, файлууд аудитын зорилгоор хадгалагдах тул администратор сэргээх боломжтой.",
+      extraHtml: '<div class="field"><label for="del-reason">Шалтгаан</label><textarea id="del-reason" rows="2" maxlength="2000"></textarea></div>',
+      confirmLabel: "Устгах", danger: true,
+      collect: function (dlg) { return { reason: dlg.querySelector("#del-reason").value.trim() }; }
+    }).then(function (res) {
+      if (!res) return;
+      VR.api(BASE + "/api/" + rec.id + "/delete", { form: { reason: res.reason || "" } }).then(function (r) {
+        if (!r.ok) { VR.toast(r.data.error || "Устгаж чадсангүй.", "err"); return; }
+        try { sessionStorage.setItem("vulnreg-flash", rec.ref + " устгагдлаа."); } catch (e) {}
+        location.href = document.getElementById("back").href;
+      });
+    });
+  }
+
+  load().then(function () {
+    if (rec && rec.perms.edit && /[?&]edit=1(&|$)/.test(location.search)) {
+      history.replaceState(null, "", location.pathname);
+      openEdit();
+    }
+  });
+})();
+</script>
+</body>
+</html>

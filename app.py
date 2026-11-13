@@ -22,12 +22,15 @@ import sys
 import tempfile
 import textwrap
 import threading
+import time
+import traceback
 import uuid
 import zlib
 from zoneinfo import ZoneInfo
+from decimal import ROUND_HALF_UP, Decimal
 from http import cookies
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlencode
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 import urllib.request as _urllib_request
 from wsgiref.simple_server import make_server
 from xml.etree import ElementTree as ET
@@ -788,13 +791,39 @@ def parse_post(environ):
     return result
 
 
+MULTIPART_MAX_BYTES = 256 * 1024 * 1024
+
+
+def _read_request_body(environ, limit=MULTIPART_MAX_BYTES):
+    """Read the whole request body. Under uvicorn + a2wsgi, wsgi.input.read(n) may return fewer than n bytes while
+    the body is still streaming in, so keep reading until Content-Length (or EOF when there is none) is reached."""
+    stream = environ["wsgi.input"]
+    try:
+        remaining = int(environ.get("CONTENT_LENGTH") or 0) or None
+    except ValueError:
+        remaining = None
+    chunks, total = [], 0
+    while total < limit:
+        want = min(65536, limit - total) if remaining is None else min(65536, remaining - total, limit - total)
+        if want <= 0:
+            break
+        chunk = stream.read(want)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks)
+
+
 def parse_multipart(environ):
+    # cgi.FieldStorage assumes read(n) returns n bytes; buffer the body first so streamed (chunked) uploads parse fully.
+    body = _read_request_body(environ)
     env = {
         "REQUEST_METHOD": environ.get("REQUEST_METHOD", "POST"),
         "CONTENT_TYPE": environ.get("CONTENT_TYPE", ""),
-        "CONTENT_LENGTH": environ.get("CONTENT_LENGTH", "0"),
+        "CONTENT_LENGTH": str(len(body)),
     }
-    return cgi.FieldStorage(fp=environ["wsgi.input"], environ=env, keep_blank_values=True)
+    return cgi.FieldStorage(fp=io.BytesIO(body), environ=env, keep_blank_values=True)
 
 
 def _csrf_token():
@@ -1461,6 +1490,7 @@ def migrate_user_dept_perms(conn):
 def ensure_database():
     conn = get_db()
     create_schema(conn)
+    ensure_vulnerabilities_table(conn)
     import_assets(conn)
     seed_users(conn)
     seed_permissions(conn)
@@ -1472,6 +1502,7 @@ def ensure_database():
     ensure_column(conn, "users", "email", "TEXT")
     ensure_column(conn, "users", "display_name", "TEXT NOT NULL DEFAULT ''")
     ensure_column(conn, "users", "last_invited_at", "TEXT")
+    ensure_column(conn, "users", "is_it_head", "INTEGER NOT NULL DEFAULT 0")
     ensure_column(conn, "audit_logs", "actor_name", "TEXT")
     # Seed admin email from env if provided and not already set
     if ADMIN_EMAIL:
@@ -2316,10 +2347,41 @@ def nav_links(user, conn=None):
             f'<a href="/departments/{dept_slug}/assets">Хөрөнгийн бүртгэл</a>' if dept_slug else '<a href="/departments">Хэлтэс</a>',
         ]
 
-    if is_admin_or_above(user):
-        items.append('<a href="/incidents/">Зөрчил</a>')
-
     links_html = "".join(f"<li>{item}</li>" for item in items)
+
+    # "Бүртгэл" (Registry) dropdown — sits right after "Аудит", same structure as "Бичиг баримт"
+    # Vulnerability register: shown only to roles granted access in VulnReg → Settings (checked again server-side).
+    vuln_href = ""
+    _vc = conn if conn else get_db()
+    try:
+        ensure_vulnerabilities_table(_vc)
+        _vu = vuln_user(_vc, user)
+        if vuln_perm(_vu, "access"):
+            vuln_href = "/registry/vulnerabilities/dashboard" if vuln_perm(_vu, "dashboard") else "/registry/vulnerabilities"
+    except Exception:
+        vuln_href = ""
+    finally:
+        if conn is None:
+            _vc.close()
+    # Shown to anyone with Incident Register access (Superadmin, InfoSec, IT Head, CTO) or VulnReg access.
+    _ic = conn if conn else get_db()
+    try:
+        incident_view = incident_access(_ic, user)[0]
+    except Exception:
+        incident_view = False
+    finally:
+        if conn is None:
+            _ic.close()
+    if incident_view or vuln_href:
+        links_html += (
+            '<li class="nav-dropdown">'
+            '<a class="nav-dropdown-trigger" href="#">Бүртгэл ▾</a>'
+            '<ul class="nav-dropdown-menu">'
+            + ('<li><a class="dropdown-item" href="/incidents/">Зөрчлийн бүртгэл</a></li>' if incident_view else '')
+            + (f'<li><a class="dropdown-item" href="{vuln_href}">Эмзэг байдлын бүртгэл</a></li>' if vuln_href else '')
+            + '</ul>'
+            '</li>'
+        )
 
     # Public docs dropdown — visible to all logged-in users
     _own_conn = conn is None
@@ -3424,10 +3486,11 @@ def admin_reset_password_page(user, target_user, error="", notice="", temp_passw
 
 
 def users_page(conn, user, notice="", error=""):
+    ensure_vulnerabilities_table(conn)  # users.vuln_role
     user_rows = conn.execute(
         """
         SELECT users.id, users.username, users.email, users.display_name,
-               users.is_admin, users.role, users.is_active, users.last_login_at,
+               users.is_admin, users.role, users.vuln_role, users.is_active, users.last_login_at,
                users.last_invited_at, departments.name AS department_name
         FROM users
         LEFT JOIN departments ON departments.id = users.department_id
@@ -3440,7 +3503,9 @@ def users_page(conn, user, notice="", error=""):
     for row in user_rows:
         dept = row["department_name"] or "—"
         role_val = row["role"] or (ROLE_ADMIN if row["is_admin"] else ROLE_USER)
-        role = _role_labels.get(role_val, role_val)
+        role = html.escape(_role_labels.get(role_val, role_val))
+        if vuln_roles_of(row):
+            role += f'<br><span class="muted" style="font-size:.85em">{html.escape(vuln_roles_text(vuln_roles_of(row)))}</span>'
         active_label = "Идэвхтэй" if row["is_active"] else '<span style="color:var(--danger)">Идэвхгүй</span>'
         email_cell = html.escape(row["email"] or "—")
         is_self = row["id"] == user["id"]
@@ -3518,34 +3583,159 @@ def users_page(conn, user, notice="", error=""):
     return render_page("Хэрэглэгчид", user, body, notice)
 
 
+_SYS_ROLE_CHOICES = ((ROLE_USER, "Хэрэглэгч"), (ROLE_ADMIN, "Админ"), (ROLE_SUPERADMIN, "Супер Админ"))
+
+
+def role_level_from_form(form):
+    """(system role, [vuln roles]) from the «Эрхийн түвшин» checkboxes."""
+    sys_role = form.get("role") or ROLE_USER
+    if sys_role not in dict(_SYS_ROLE_CHOICES):
+        sys_role = ROLE_USER
+    return sys_role, [r for r in VULN_ROLES if form.get(f"vuln_role_{r}") == "1"]
+
+
+def log_role_change(conn, actor, target, old_sys, new_sys, old_v, new_v, reason):
+    """Audit (who / when / previous / new / reason) for role changes made on the Users page."""
+    labels = dict(_SYS_ROLE_CHOICES)
+    name = _vuln_user_label(target)
+    if old_sys != new_sys:
+        _vuln_config_log(conn, actor, f"user_sysrole:{target['id']}", f"Системийн эрх — {name}",
+                         labels.get(old_sys, old_sys or "—"), labels.get(new_sys, new_sys), reason)
+    if old_v != new_v:
+        _vuln_config_log(conn, actor, f"user_role:{target['id']}", f"Эрх — {name}",
+                         vuln_roles_text(old_v), vuln_roles_text(new_v), reason)
+
+
+_UC_ICON = {
+    "user": '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M4 20a8 8 0 0 1 16 0"/>',
+    "admin": '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/>',
+    "superadmin": '<path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>',
+    "infosec": '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+    "it_head": '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+    "engineer": '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4 2.5-2.5z"/>',
+    "cto": '<path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17l-6.1 3.4 1.5-6.8L2.2 9l6.9-.7L12 2z"/>',
+}
+
+
+def _uc_icon(key):
+    return (f'<svg class="uc-role-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" '
+            f'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{_UC_ICON.get(key, "")}</svg>')
+
+
+_SYS_ROLE_ICON_KEY = {ROLE_USER: "user", ROLE_ADMIN: "admin", ROLE_SUPERADMIN: "superadmin"}
+
+_USER_CREATE_CSS = """
+<style>
+.uc-panel { max-width: 640px; margin: 0 auto; padding: 28px; }
+.uc-panel h1 { margin-bottom: 4px; }
+.uc-form { display: flex; flex-direction: column; gap: 22px; margin-top: 18px; }
+.uc-section { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); margin: 0; padding: 0; min-width: 0; }
+.uc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.uc-field textarea { width: 100%; min-height: 64px; }
+.uc-section .table-wrap { margin: 0; }
+.uc-section table { width: 100%; }
+.uc-section-head { padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface-alt);
+  border-radius: var(--radius-md) var(--radius-md) 0 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.uc-section-title { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary); }
+.uc-section-hint { font-size: 0.75rem; color: var(--muted); }
+.uc-section-body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.uc-field { display: flex; flex-direction: column; gap: 6px; font-weight: 500; color: var(--text-secondary); }
+.uc-field input, .uc-field select { height: 40px; width: 100%; }
+.uc-field .uc-opt { font-weight: 400; color: var(--muted); }
+.uc-roles { display: grid; gap: 10px; }
+.uc-roles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.uc-roles-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.uc-role { position: relative; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-alt); cursor: pointer;
+  font-weight: 500; color: var(--text-secondary); line-height: 1.3;
+  transition: border-color .15s, background .15s, box-shadow .15s; }
+.uc-role:hover { border-color: var(--border-strong); }
+.uc-role-inline { align-self: flex-start; min-height: 0; padding: 8px 14px; }
+.uc-role input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.uc-role-icon { flex: none; color: var(--muted); transition: color .15s; }
+.uc-role-name { flex: 1; min-width: 0; }
+.uc-role:has(input:checked) { border-color: var(--primary); background: var(--primary-light); color: var(--text);
+  box-shadow: 0 0 0 1px var(--primary) inset; }
+.uc-role:has(input:checked) .uc-role-icon { color: var(--primary); }
+.uc-role:has(input:focus-visible) { outline: 2px solid var(--primary); outline-offset: 2px; }
+.uc-role:has(input:disabled) { opacity: .6; cursor: not-allowed; }
+.uc-info { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: var(--radius-md);
+  background: var(--primary-light); border: 1px solid var(--primary-border); color: var(--text-secondary); font-size: 0.8125rem; }
+.uc-info svg { flex: none; margin-top: 2px; color: var(--primary); }
+.uc-actions { display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border); padding-top: 18px; }
+.uc-actions > * { min-width: 110px; justify-content: center; text-align: center; }
+@media (max-width: 640px) {
+  .uc-panel { padding: 18px 16px; }
+  .uc-roles-3 { grid-template-columns: 1fr; }
+  .uc-roles-2 { grid-template-columns: 1fr; }
+  .uc-section-body { padding: 14px; }
+  .uc-actions { flex-direction: column-reverse; }
+  .uc-actions > * { width: 100%; }
+}
+@media (min-width: 641px) and (max-width: 760px) {
+  .uc-roles-3 { grid-template-columns: 1fr; }
+}
+</style>
+"""
+
+
+def _uc_role_sections(sel_sys, sel_vuln, lock_sys=False):
+    """«Системийн эрх» (one "role" radio) + «Эмзэг байдлын бүртгэл» (vuln_role_<r>=1 checkboxes) as card sections."""
+    sel_sys = sel_sys if sel_sys in dict(_SYS_ROLE_CHOICES) else ROLE_USER
+    dis = " disabled" if lock_sys else ""
+    sys_cards = "".join(
+        f'<label class="uc-role"><input type="radio" name="role" value="{r}"{" checked" if r == sel_sys else ""}{dis}>'
+        f'{_uc_icon(_SYS_ROLE_ICON_KEY[r])}<span class="uc-role-name">{lbl}</span></label>'
+        for r, lbl in _SYS_ROLE_CHOICES)
+    vuln_cards = "".join(
+        f'<label class="uc-role"><input type="checkbox" name="vuln_role_{r}" value="1"{" checked" if r in sel_vuln else ""}>'
+        f'{_uc_icon(r)}<span class="uc-role-name">{html.escape(VULN_ROLE_LABELS[r])}</span></label>'
+        for r in VULN_ROLES)
+    lock_note = '<p class="muted" style="margin:0;font-size:.8125rem">Өөрийн системийн түвшинг өөрчлөх боломжгүй.</p>' if lock_sys else ""
+    return f"""
+        <fieldset class="uc-section">
+          <legend class="uc-sr">Системийн эрх</legend>
+          <div class="uc-section-head"><span class="uc-section-title">Системийн эрх</span><span class="uc-section-hint">нэгийг сонгоно</span></div>
+          <div class="uc-section-body"><div class="uc-roles uc-roles-3">{sys_cards}</div>{lock_note}</div>
+        </fieldset>
+        <fieldset class="uc-section">
+          <legend class="uc-sr">Эмзэг байдлын бүртгэл</legend>
+          <div class="uc-section-head"><span class="uc-section-title">Эмзэг байдлын бүртгэл</span><span class="uc-section-hint">хэдийг ч сонгож болно</span></div>
+          <div class="uc-section-body"><div class="uc-roles uc-roles-2">{vuln_cards}</div></div>
+        </fieldset>"""
+
+
 def user_create_page(departments, error="", values=None):
     values = values or {}
     dept_options = '<option value="">— Хэлтэс сонгоогүй —</option>'
     for d in departments:
         sel = 'selected' if str(values.get("department_id", "")) == str(d["id"]) else ""
         dept_options += f'<option value="{d["id"]}" {sel}>{html.escape(d["name"])}</option>'
-    sel_role = values.get("role", ROLE_USER)
-    role_options = "".join(
-        f'<option value="{r}" {"selected" if sel_role == r else ""}>{lbl}</option>'
-        for r, lbl in [(ROLE_USER, "Хэрэглэгч"), (ROLE_ADMIN, "Админ"), (ROLE_SUPERADMIN, "Супер Админ")]
-    )
+    sel_sys, sel_vuln = role_level_from_form(values)
+    role_sections = _uc_role_sections(sel_sys, sel_vuln)
+    info_icon = ('<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" '
+                 'stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>')
     body = f"""
-    <section class="panel panel-narrow">
+    {_USER_CREATE_CSS}
+    <section class="panel uc-panel">
       <h1>Шинэ хэрэглэгч нэмэх</h1>
       {fmt_error(error)}
-      <form method="post" action="/users/create" class="stack-form">
-        <label>Azure и-мэйл хаяг<input type="email" name="email" value="{html.escape(values.get('email', ''))}" required autofocus placeholder="user@company.com"></label>
-        <label>Дэлгэцийн нэр (заавал биш)<input type="text" name="display_name" value="{html.escape(values.get('display_name', ''))}" placeholder="Нэр Овог"></label>
-        <label>Үндсэн хэлтэс
-          <select name="department_id">{dept_options}</select>
-        </label>
-        <label>Эрхийн түвшин
-          <select name="role">{role_options}</select>
-        </label>
-        <p class="muted" style="margin:0">Хэрэглэгч порталаар нэвтэрч орно. Нууц үг шаардлагагүй.</p>
-        <div style="display:flex;gap:0.5rem">
-          <button type="submit">Үүсгэх</button>
+      <form method="post" action="/users/create" class="uc-form">
+        <div class="uc-section">
+          <div class="uc-section-head"><span class="uc-section-title">Хэрэглэгчийн мэдээлэл</span></div>
+          <div class="uc-section-body">
+            <label class="uc-field">Azure и-мэйл хаяг<input type="email" name="email" value="{html.escape(values.get('email', ''))}" required autofocus placeholder="user@company.com"></label>
+            <label class="uc-field">Дэлгэцийн нэр (заавал биш)<input type="text" name="display_name" value="{html.escape(values.get('display_name', ''))}" placeholder="Нэр Овог"></label>
+            <label class="uc-field">Үндсэн хэлтэс
+              <select name="department_id">{dept_options}</select>
+            </label>
+          </div>
+        </div>
+        {role_sections}
+        <div class="uc-info">{info_icon}<span>Хэрэглэгч порталаар нэвтэрч орно. Нууц үг шаардлагагүй.</span></div>
+        <div class="uc-actions">
           <a class="button-link ghost" href="/users">Буцах</a>
+          <button type="submit">Үүсгэх</button>
         </div>
       </form>
     </section>
@@ -3553,7 +3743,7 @@ def user_create_page(departments, error="", values=None):
     return body
 
 
-def user_edit_page(conn, target_user, departments, dept_perms, error="", values=None):
+def user_edit_page(conn, target_user, departments, dept_perms, error="", values=None, lock_sys=False):
     # Normalise target_user to dict so .get() works everywhere below
     tu = dict(target_user) if not isinstance(target_user, dict) else target_user
     values = values or tu
@@ -3562,11 +3752,8 @@ def user_edit_page(conn, target_user, departments, dept_perms, error="", values=
     for d in departments:
         sel = 'selected' if str(d["id"]) == selected_dept else ""
         dept_options += f'<option value="{d["id"]}" {sel}>{html.escape(d["name"])}</option>'
-    cur_role = (values.get("role") if values is not tu else None) or tu.get("role") or (ROLE_ADMIN if tu.get("is_admin") else ROLE_USER)
-    role_options = "".join(
-        f'<option value="{r}" {"selected" if cur_role == r else ""}>{lbl}</option>'
-        for r, lbl in [(ROLE_USER, "Хэрэглэгч"), (ROLE_ADMIN, "Админ"), (ROLE_SUPERADMIN, "Супер Админ")]
-    )
+    cur_role = tu.get("role") or (ROLE_ADMIN if tu.get("is_admin") else ROLE_USER)
+    role_sections = _uc_role_sections(cur_role, vuln_roles_of(tu), lock_sys=bool(lock_sys))
     is_active_checked = 'checked' if (values.get("is_active", "1") != "0" if values is not tu else tu.get("is_active")) else ""
 
     perm_rows = ""
@@ -3584,41 +3771,47 @@ def user_edit_page(conn, target_user, departments, dept_perms, error="", values=
     edit_email = html.escape(str(values.get("email") or tu.get("email") or ""))
     edit_display = html.escape(str(values.get("display_name") or tu.get("display_name") or ""))
     body = f"""
-    <section class="panel panel-narrow">
+    {_USER_CREATE_CSS}
+    <section class="panel uc-panel">
       <h1>{html.escape(tu.get('display_name') or tu.get('email') or tu.get('username',''))} — Засах</h1>
       {fmt_error(error)}
-      <form method="post" action="/users/{target_user['id']}/edit" class="stack-form">
-        <label>Azure и-мэйл хаяг<input type="email" name="email" value="{edit_email}" required></label>
-        <label>Дэлгэцийн нэр<input type="text" name="display_name" value="{edit_display}" placeholder="Нэр Овог"></label>
-        <label>Хэлтэс (үндсэн)
-          <select name="department_id">{dept_options}</select>
-        </label>
-        <label>Эрхийн түвшин
-          <select name="role">{role_options}</select>
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" name="is_active" value="1" {is_active_checked}> Идэвхтэй
-        </label>
-        <h2 style="margin-top:1.5rem">Хэлтсийн хандах эрх</h2>
-        <p class="muted" style="margin:0">Админ болон Супер Админ эрхтэй хэрэглэгчид бүх хэлтэст автоматаар хандана.</p>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr><th>Хэлтэс</th><th style="text-align:center">Унших</th><th style="text-align:center">Засах / Нэмэх / Устгах</th></tr>
-            </thead>
-            <tbody>{perm_rows}</tbody>
-          </table>
+      <form method="post" action="/users/{target_user['id']}/edit" class="uc-form">
+        <div class="uc-section">
+          <div class="uc-section-head"><span class="uc-section-title">Хэрэглэгчийн мэдээлэл</span></div>
+          <div class="uc-section-body">
+            <label class="uc-field">Azure и-мэйл хаяг<input type="email" name="email" value="{edit_email}" required></label>
+            <label class="uc-field">Дэлгэцийн нэр<input type="text" name="display_name" value="{edit_display}" placeholder="Нэр Овог"></label>
+            <label class="uc-field">Хэлтэс (үндсэн)
+              <select name="department_id">{dept_options}</select>
+            </label>
+            <label class="uc-role uc-role-inline">
+              <input type="checkbox" name="is_active" value="1" {is_active_checked}><span class="uc-role-name">Идэвхтэй</span>
+            </label>
+          </div>
         </div>
-        <div style="display:flex;gap:0.5rem;margin-top:1rem">
-          <button type="submit">Хадгалах</button>
+        {role_sections}
+        <div class="uc-section">
+          <div class="uc-section-head"><span class="uc-section-title">Хэлтсийн хандах эрх</span></div>
+          <div class="uc-section-body">
+            <p class="muted" style="margin:0;font-size:.8125rem">Админ болон Супер Админ эрхтэй хэрэглэгчид бүх хэлтэст автоматаар хандана.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Хэлтэс</th><th style="text-align:center">Унших</th><th style="text-align:center">Засах / Нэмэх / Устгах</th></tr>
+                </thead>
+                <tbody>{perm_rows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="uc-actions">
           <a class="button-link ghost" href="/users">Буцах</a>
+          <button type="submit">Хадгалах</button>
         </div>
       </form>
     </section>
     """
     return body
-
-
 
 
 def kpi_list_page(conn, user, notice="", error=""):
@@ -4363,7 +4556,7 @@ def admin_document_category_page(conn, user, category, notice=""):
             )
         _incident_btn = (
             '<a class="button-link ghost small" href="/admin-docs/registers/zorchlin-burtgel/new">Зөрчил нэмэх</a>'
-            if "L1-POL-12" in d.name and is_admin_or_above(user) else ""
+            if "L1-POL-12" in d.name and incident_access(conn, user)[1] else ""
         )
         _mgmt_btns = (
             f'<details style="display:inline-block">'
@@ -4690,7 +4883,7 @@ def admin_document_view_page(conn, user, file_path, notice=""):
     download_href = f"/admin-docs/{quote(file_path.name)}/download"
     incident_register = get_attachment_register("zorchlin-burtgel")
     incident_buttons = ""
-    if is_incident_doc and incident_register:
+    if is_incident_doc and incident_register and incident_access(conn, user)[0]:
         incident_buttons = f"""
           <a class="button-link ghost" href="/admin-docs/registers/zorchlin-burtgel">Зөрчлийн бүртгэл</a>
           <a class="button-link ghost" href="/admin-docs/registers/zorchlin-burtgel/export.xlsx">Татах (Excel)</a>"""
@@ -5160,7 +5353,3030 @@ _AUDIT_ENTITY_LABELS = {
     "attachment_disposal": "Устгалтын бүртгэл",
     "attachment_change": "Өөрчлөлтийн бүртгэл",
     "attachment_incident": "Зөрчлийн бүртгэл",
+    "vulnerability": "Эмзэг байдал",
+    "vuln_setting": "Эмзэг байдлын тохиргоо",
 }
+
+
+_CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$")
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_VULN_TEXT_LIMITS = {
+    "cve_id": 32, "title": 300, "source": 200, "source_url": 2000,
+    "description": 10000, "scope": 5000, "verification_method": 5000, "recommendation": 10000, "threat_trend": 5000,
+    "owner_custodian": 300, "affected_asset": 300,
+}
+
+
+def _valid_iso_date(value):
+    if not _ISO_DATE_RE.match(value):
+        return False
+    try:
+        dt.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+_VULN_TABLE_DDL = """
+        CREATE TABLE IF NOT EXISTS vulnerabilities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cve_id TEXT NOT NULL DEFAULT '',
+            title TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT '',
+            source_url TEXT NOT NULL DEFAULT '',
+            published_date TEXT NOT NULL DEFAULT '',
+            reported_date TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            scope TEXT NOT NULL DEFAULT '',
+            verification_method TEXT NOT NULL DEFAULT '',
+            recommendation TEXT NOT NULL DEFAULT '',
+            threat_trend TEXT NOT NULL DEFAULT '',
+            cvss_score REAL,
+            severity TEXT NOT NULL DEFAULT '',
+            remediation_days INTEGER,
+            due_date TEXT NOT NULL DEFAULT '',
+            department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+"""
+
+
+_VULN_EXTRA_DDL = """
+        CREATE TABLE IF NOT EXISTS vulnerability_activity (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vulnerability_id INTEGER NOT NULL REFERENCES vulnerabilities(id) ON DELETE CASCADE,
+            actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            actor_name TEXT NOT NULL DEFAULT '',
+            action TEXT NOT NULL,
+            field TEXT NOT NULL DEFAULT '',
+            old_value TEXT NOT NULL DEFAULT '',
+            new_value TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_vuln_activity_vuln ON vulnerability_activity(vulnerability_id, id);
+        -- The activity log is an audit trail: rows can be appended, never edited or removed.
+        CREATE TRIGGER IF NOT EXISTS trg_vuln_activity_no_update BEFORE UPDATE ON vulnerability_activity
+        BEGIN SELECT RAISE(ABORT, 'vulnerability_activity is append-only'); END;
+        CREATE TRIGGER IF NOT EXISTS trg_vuln_activity_no_delete BEFORE DELETE ON vulnerability_activity
+        BEGIN SELECT RAISE(ABORT, 'vulnerability_activity is append-only'); END;
+        CREATE TABLE IF NOT EXISTS vulnerability_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vulnerability_id INTEGER NOT NULL REFERENCES vulnerabilities(id) ON DELETE CASCADE,
+            original_name TEXT NOT NULL,
+            stored_name TEXT NOT NULL,
+            size INTEGER NOT NULL DEFAULT 0,
+            uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            uploaded_at TEXT NOT NULL,
+            deleted_at TEXT NOT NULL DEFAULT '',
+            deleted_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_vuln_files_vuln ON vulnerability_files(vulnerability_id);
+"""
+_VULN_EXTRA_COLUMNS = (
+    ("status", "TEXT NOT NULL DEFAULT 'new'"),
+    ("vuln_custom", "TEXT NOT NULL DEFAULT '{}'"),
+    ("asset_id", "INTEGER REFERENCES assets(id) ON DELETE SET NULL"),
+    ("assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("impact", "TEXT NOT NULL DEFAULT ''"),
+    ("risk_justification", "TEXT NOT NULL DEFAULT ''"),
+    ("remediation_notes", "TEXT NOT NULL DEFAULT ''"),
+    ("remediated_date", "TEXT NOT NULL DEFAULT ''"),
+    ("closed_at", "TEXT NOT NULL DEFAULT ''"),
+    ("risk_accept_reason", "TEXT NOT NULL DEFAULT ''"),
+    ("risk_accept_approver_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("risk_accept_until", "TEXT NOT NULL DEFAULT ''"),
+    ("updated_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("deleted_at", "TEXT NOT NULL DEFAULT ''"),
+    ("deleted_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("owner_custodian", "TEXT NOT NULL DEFAULT ''"),
+    ("in_use", "TEXT NOT NULL DEFAULT ''"),
+    # Affected asset / system as free text (form section 2). Older records link to assets via asset_id instead.
+    ("affected_asset", "TEXT NOT NULL DEFAULT ''"),
+    # Registration form section 2 (informational only; no workflow effect).
+    ("env_present", "TEXT NOT NULL DEFAULT ''"),
+    ("compromise_signs", "TEXT NOT NULL DEFAULT ''"),
+    # Step 4a — InfoSec decides whether the asset is affected (after the engineer submits section 2 + assessment).
+    ("ia_note", "TEXT NOT NULL DEFAULT ''"),
+    ("ia_decided_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("ia_decided_at", "TEXT NOT NULL DEFAULT ''"),
+    # Registration batch: one record (finding) per affected asset, all sharing the first record's id.
+    ("group_id", "INTEGER"),
+    # Step 3 — Engineer assessment
+    ("as_scope", "TEXT NOT NULL DEFAULT ''"),
+    ("as_system_owner", "TEXT NOT NULL DEFAULT ''"),
+    ("as_version", "TEXT NOT NULL DEFAULT ''"),
+    ("as_internet_facing", "TEXT NOT NULL DEFAULT ''"),
+    ("as_test_method", "TEXT NOT NULL DEFAULT ''"),
+    ("as_evidence", "TEXT NOT NULL DEFAULT ''"),
+    ("as_patch_available", "TEXT NOT NULL DEFAULT ''"),
+    ("as_business_impact", "TEXT NOT NULL DEFAULT ''"),
+    ("as_conclusion", "TEXT NOT NULL DEFAULT ''"),
+    ("as_affected", "TEXT NOT NULL DEFAULT ''"),
+    ("as_exploited", "TEXT NOT NULL DEFAULT ''"),
+    ("as_incident_ref", "TEXT NOT NULL DEFAULT ''"),
+    ("as_submitted_at", "TEXT NOT NULL DEFAULT ''"),
+    # Step 4 — InfoSec risk assessment (MAS-14)
+    ("ra_threat", "TEXT NOT NULL DEFAULT ''"),
+    ("ra_impacts", "TEXT NOT NULL DEFAULT ''"),
+    ("ra_impact", "INTEGER"),
+    ("ra_likelihood", "INTEGER"),
+    ("ra_score", "INTEGER"),
+    ("ra_level", "TEXT NOT NULL DEFAULT ''"),
+    ("ra_due", "TEXT NOT NULL DEFAULT ''"),
+    ("ra_decision", "TEXT NOT NULL DEFAULT ''"),
+    ("ra_decision_note", "TEXT NOT NULL DEFAULT ''"),
+    ("ra_assessed_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("ra_assessed_at", "TEXT NOT NULL DEFAULT ''"),
+    ("risk_accept_requested_by", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    # Step 5 — Remediation / temporary mitigation
+    ("rm_plan", "TEXT NOT NULL DEFAULT ''"),
+    ("rm_actions", "TEXT NOT NULL DEFAULT ''"),
+    ("rm_target_date", "TEXT NOT NULL DEFAULT ''"),
+    ("rm_change_ref", "TEXT NOT NULL DEFAULT ''"),
+    ("rm_fix_type", "TEXT NOT NULL DEFAULT ''"),
+    ("tm_controls", "TEXT NOT NULL DEFAULT ''"),
+    ("tm_until", "TEXT NOT NULL DEFAULT ''"),
+    ("avoid_note", "TEXT NOT NULL DEFAULT ''"),
+    ("avoid_confirmed_at", "TEXT NOT NULL DEFAULT ''"),
+    # Steps 6–7 — Verification and closure
+    ("vf_note", "TEXT NOT NULL DEFAULT ''"),
+    ("closure_comment", "TEXT NOT NULL DEFAULT ''"),
+    ("residual_risk", "TEXT NOT NULL DEFAULT ''"),
+    ("risk_status", "TEXT NOT NULL DEFAULT ''"),
+)
+_VULN_SETTINGS_DDL = """
+        CREATE TABLE IF NOT EXISTS vuln_substitutes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            principal_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            substitute_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            note TEXT NOT NULL DEFAULT '',
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TEXT NOT NULL,
+            revoked_at TEXT NOT NULL DEFAULT '',
+            revoked_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_vuln_subst_sub ON vuln_substitutes(substitute_id, start_date, end_date);
+        -- Configuration audit log: who / when / previous value / new value / reason. Append-only.
+        CREATE TABLE IF NOT EXISTS vuln_config_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            actor_name TEXT NOT NULL DEFAULT '',
+            setting TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '',
+            old_value TEXT NOT NULL DEFAULT '',
+            new_value TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE TRIGGER IF NOT EXISTS trg_vuln_config_audit_no_update BEFORE UPDATE ON vuln_config_audit
+        BEGIN SELECT RAISE(ABORT, 'vuln_config_audit is append-only'); END;
+        CREATE TRIGGER IF NOT EXISTS trg_vuln_config_audit_no_delete BEFORE DELETE ON vuln_config_audit
+        BEGIN SELECT RAISE(ABORT, 'vuln_config_audit is append-only'); END;
+"""
+# Statuses of the earlier workflow and their equivalent in the current one (migrated once).
+_VULN_LEGACY_STATUS = {"in_progress": "remediation", "on_hold": "assigned", "risk_accepted": "accepted", "reopened": "remediation",
+                       "impact_review": "risk_assessment"}  # the separate impact step is now part of the risk assessment
+_vuln_schema_ready = False
+
+
+def ensure_vulnerabilities_table(conn):
+    global _vuln_schema_ready
+    if _vuln_schema_ready:
+        return
+    conn.execute(_VULN_TABLE_DDL)
+    ensure_column(conn, "users", "is_it_head", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column(conn, "vulnerabilities", "threat_trend", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(conn, "vulnerabilities", "severity", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(conn, "vulnerabilities", "remediation_days", "INTEGER")
+    ensure_column(conn, "vulnerabilities", "due_date", "TEXT NOT NULL DEFAULT ''")
+    ensure_column(conn, "users", "vuln_role", "TEXT NOT NULL DEFAULT ''")
+    # One-time carry-over of the old IT Head checkbox into the VulnReg role.
+    conn.execute("UPDATE users SET vuln_role = 'it_head' WHERE is_it_head = 1 AND vuln_role = ''")
+    for column, definition in _VULN_EXTRA_COLUMNS:
+        ensure_column(conn, "vulnerabilities", column, definition)
+    conn.executescript(_VULN_EXTRA_DDL)
+    conn.executescript(_VULN_SETTINGS_DDL)
+    ensure_column(conn, "vulnerability_files", "category", "TEXT NOT NULL DEFAULT ''")
+    for old, new in _VULN_LEGACY_STATUS.items():
+        conn.execute("UPDATE vulnerabilities SET status = ? WHERE status = ?", (new, old))
+    conn.execute("UPDATE vulnerabilities SET group_id = id WHERE group_id IS NULL")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vuln_status ON vulnerabilities(status)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vuln_assignee ON vulnerabilities(assignee_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vuln_department ON vulnerabilities(department_id)")
+    conn.commit()
+    _vuln_schema_ready = True
+
+
+# SLA policy: lowest CVSS score of each severity band + remediation days. Stored as JSON in
+# app_settings[vuln_sla] and edited on /registry/vulnerabilities/settings; these are the defaults.
+# The Low band always starts just above 0.0 (CVSS 0.0 = "None", no deadline).
+VULN_SLA_SETTING = "vuln_sla"
+VULN_SLA_LEVELS = ("critical", "high", "medium", "low")
+VULN_SLA_DEFAULT = {
+    "critical": {"min": 9.0, "days": 5},
+    "high": {"min": 7.0, "days": 30},
+    "medium": {"min": 4.0, "days": 60},
+    "low": {"min": 0.1, "days": 90},
+}
+VULN_SLA_MAX_DAYS = 365
+
+
+def _vuln_sla_errors(sla):
+    """Validate an SLA dict; returns {form field: message} (empty when valid)."""
+    errors = {}
+    for level in VULN_SLA_LEVELS:
+        band = sla.get(level) if isinstance(sla, dict) else None
+        if not isinstance(band, dict):
+            errors[f"{level}_days"] = "Утга дутуу байна."
+            continue
+        days = band.get("days")
+        if not isinstance(days, int) or isinstance(days, bool) or not (1 <= days <= VULN_SLA_MAX_DAYS):
+            errors[f"{level}_days"] = f"1–{VULN_SLA_MAX_DAYS} хоорондох бүхэл тоо оруулна уу."
+        if level != "low":
+            m = band.get("min")
+            if not isinstance(m, (int, float)) or isinstance(m, bool) or not (0.1 <= m <= 10.0):
+                errors[f"{level}_min"] = "0.1–10.0 хооронд байх ёстой."
+    if errors:
+        return errors
+    if not sla["critical"]["min"] > sla["high"]["min"]:
+        errors["high_min"] = "High-ийн доод хязгаар Critical-аас бага байх ёстой."
+    if not sla["high"]["min"] > sla["medium"]["min"]:
+        errors["medium_min"] = "Medium-ийн доод хязгаар High-аас бага байх ёстой."
+    if not sla["medium"]["min"] > 0.1:
+        errors["medium_min"] = "Medium-ийн доод хязгаар 0.1-ээс их байх ёстой."
+    return errors
+
+
+def vuln_sla(conn):
+    """Current SLA policy (falls back to the defaults if the stored value is missing or invalid)."""
+    raw = get_setting(conn, VULN_SLA_SETTING, "")
+    if raw:
+        try:
+            sla = json.loads(raw)
+            if not _vuln_sla_errors(sla):
+                return {lvl: {"min": float(sla[lvl]["min"]) if lvl != "low" else 0.1, "days": int(sla[lvl]["days"])}
+                        for lvl in VULN_SLA_LEVELS}
+        except (ValueError, TypeError, KeyError):
+            pass
+    return json.loads(json.dumps(VULN_SLA_DEFAULT))
+
+
+def cvss_severity(score, sla=None):
+    """Map a CVSS score to (severity, remediation_days). days is None when there is no deadline."""
+    if score is None:
+        return "", None
+    sla = sla or VULN_SLA_DEFAULT
+    for level in VULN_SLA_LEVELS:
+        if score >= sla[level]["min"] - 1e-9:
+            return level.capitalize(), sla[level]["days"]
+    return "None", None
+
+
+_VULN_EXTRA_TEXT_LIMITS = {"impact": 5000, "risk_justification": 5000, "remediation_notes": 10000}
+VULN_STATUS_LABELS = {
+    "new": "Шинэ",
+    "returned": "Буцаасан",
+    "assigned": "Хариуцагч томилсон",
+    "under_assessment": "Үнэлгээ хийгдэж буй",
+    "not_affected": "Нөлөөлөөгүй – Хаагдсан",
+    "risk_assessment": "Эрсдэлийн үнэлгээ",
+    "pending_cto": "CTO-ийн зөвшөөрөл хүлээж буй",
+    "accepted": "Эрсдэл хүлээн зөвшөөрсөн",
+    "transferred": "Шилжүүлсэн – Хаагдсан",
+    "avoidance": "Зайлсхийх (систем зогсоох)",
+    "remediation": "Засвар хийгдэж буй",
+    "verification": "Баталгаажуулалт",
+    "temp_mitigation": "Түр хамгаалалт",
+    "closed": "Хаагдсан",
+}
+VULN_STATUS_ORDER = list(VULN_STATUS_LABELS)
+# No remediation deadline is tracked in these statuses (the finding is closed or its risk formally accepted).
+VULN_CLOSED_STATUSES = ("closed", "not_affected", "transferred", "accepted")
+# Statuses in which the IT Head may (re)assign the responsible engineer.
+VULN_ASSIGNABLE_STATUSES = ("new", "assigned", "under_assessment", "remediation", "avoidance", "temp_mitigation")
+
+# Workflow actions: key -> (from statuses, actor, label). Actor: infosec | it_head | cto | assignee.
+# Superadmin may act in every role. Everything is re-checked on the server in vuln_available_actions().
+VULN_ACTIONS = {
+    "return": (("new",), "it_head", "Буцаах (мэдээлэл дутуу)"),
+    "resubmit": (("returned",), "infosec", "Дахин илгээх"),
+    # The engineer fills in section 2 + assessment straight from "assigned" (no separate "start" step).
+    "save_assessment": (("assigned", "under_assessment"), "assignee", "Үнэлгээ хадгалах"),
+    "submit_assessment": (("assigned", "under_assessment"), "assignee", "Үнэлгээ илгээх"),
+    "risk_assess": (("risk_assessment",), "infosec", "Эрсдэлийн үнэлгээ"),
+    "cto_approve": (("pending_cto",), "cto", "Эрсдэл хүлээн зөвшөөрөх"),
+    "cto_reject": (("pending_cto",), "cto", "Татгалзах"),
+    "avoid_confirm": (("avoidance",), "assignee", "Систем зогсоосныг баталгаажуулах"),
+    "avoid_close": (("avoidance",), "infosec", "Хянаж хаах"),
+    "save_remediation": (("remediation",), "assignee", "Засварын төлөвлөгөө хадгалах"),
+    "submit_fix": (("remediation",), "assignee", "Засвар хийсэн — шалгуулах"),
+    "submit_temp": (("remediation",), "assignee", "Түр хамгаалалт хэрэгжүүлсэн"),
+    "cannot_remediate": (("remediation",), "assignee", "Засварлах боломжгүй"),
+    "verify_fail": (("verification",), "infosec", "Засагдаагүй — буцаах"),
+    "verify_temp": (("verification",), "infosec", "Түр хамгаалалт гэж батлах"),
+    "close": (("verification",), "infosec", "Баталгаажуулж хаах"),
+    "temp_resume": (("temp_mitigation",), "assignee", "Засвар руу шилжүүлэх"),
+}
+
+# ── VulnReg roles, access permissions, substitutes ──────────────────────────
+VULN_ROLES = ("infosec", "it_head", "engineer", "cto")
+VULN_ROLE_LABELS = {"infosec": "Мэдээллийн аюулгүй байдал (InfoSec)", "it_head": "IT-ийн дарга (IT Head)",
+                    "engineer": "Инженер", "cto": "CTO", "": "Хандах эрхгүй"}
+VULN_SUBSTITUTABLE_ROLES = ("it_head", "cto")
+# users.vuln_role holds zero or more roles as a comma-separated list in VULN_ROLES order, e.g. "it_head,engineer".
+_VULN_HAS_ROLE_SQL = "(',' || {col} || ',') LIKE ('%,' || ? || ',%')"
+
+
+def vuln_roles_of(row):
+    """The user's own VulnReg roles (list, canonical order) parsed from users.vuln_role."""
+    try:
+        raw = row["vuln_role"] or ""
+    except (KeyError, IndexError, TypeError):
+        raw = ""
+    got = {r.strip() for r in raw.split(",")}
+    return [r for r in VULN_ROLES if r in got]
+
+
+def vuln_roles_value(roles):
+    roles = set(roles)
+    return ",".join(r for r in VULN_ROLES if r in roles)
+
+
+def vuln_roles_text(roles):
+    return ", ".join(VULN_ROLE_LABELS[r] for r in roles) or VULN_ROLE_LABELS[""]
+VULN_PERMS = ("access", "view_all", "export", "dashboard")
+VULN_PERM_LABELS = {"access": "Эмзэг байдлын бүртгэл рүү хандах", "view_all": "Бүх бүртгэлийг харах",
+                    "export": "Экспорт (CSV/XLSX)", "dashboard": "Хяналтын самбар"}
+VULN_PERMS_SETTING = "vuln_role_perms"
+VULN_PERMS_DEFAULT = {
+    "infosec": {"access": True, "view_all": True, "export": True, "dashboard": True},
+    "it_head": {"access": True, "view_all": True, "export": True, "dashboard": True},
+    "cto": {"access": True, "view_all": True, "export": True, "dashboard": True},
+    "engineer": {"access": True, "view_all": False, "export": False, "dashboard": False},
+}
+# InfoSec runs the register and its settings, so these can never be switched off (prevents lock-out).
+VULN_PERMS_LOCKED = {("infosec", "access"), ("infosec", "view_all")}
+
+
+def vuln_role_perms(conn):
+    perms = json.loads(json.dumps(VULN_PERMS_DEFAULT))
+    raw = get_setting(conn, VULN_PERMS_SETTING, "")
+    if raw:
+        try:
+            stored = json.loads(raw)
+            for role in VULN_ROLES:
+                for perm in VULN_PERMS:
+                    if isinstance(stored.get(role, {}).get(perm), bool) and (role, perm) not in VULN_PERMS_LOCKED:
+                        perms[role][perm] = stored[role][perm]
+        except (ValueError, TypeError, AttributeError):
+            pass
+    return perms
+
+
+def _vuln_today():
+    return now_utc().date().isoformat()
+
+
+def vuln_active_substitutions(conn, user_id, today=None):
+    """Roles the user currently holds as a substitute (period covers today and not revoked)."""
+    today = today or _vuln_today()
+    return conn.execute(
+        """SELECT * FROM vuln_substitutes WHERE substitute_id = ? AND revoked_at = ''
+           AND start_date <= ? AND end_date >= ?""", (user_id, today, today)).fetchall()
+
+
+def vuln_user(conn, user):
+    """User row as a dict carrying the effective VulnReg roles (own role + active substitutions) and permissions."""
+    if user is None:
+        return None
+    if isinstance(user, dict) and "_vroles" in user:
+        return user
+    u = dict(user)
+    own = vuln_roles_of(u)
+    roles = set(own)
+    subs = vuln_active_substitutions(conn, u["id"])
+    roles |= {s["role"] for s in subs if s["role"] in VULN_SUBSTITUTABLE_ROLES}
+    perms = vuln_role_perms(conn)
+    eff = {p: is_superadmin(u) or any(perms[r][p] for r in roles) for p in VULN_PERMS}
+    u["_vrole"] = own
+    u["_vroles"] = roles
+    u["_vsubs"] = [{"role": s["role"], "until": s["end_date"]} for s in subs]
+    u["_vperms"] = eff
+    return u
+
+
+def _vroles(user):
+    try:
+        return user["_vroles"]
+    except (KeyError, IndexError, TypeError):
+        return set()
+
+
+def vuln_perm(user, perm):
+    if is_superadmin(user):
+        return True
+    try:
+        return bool(user["_vperms"][perm])
+    except (KeyError, IndexError, TypeError):
+        return False
+
+
+INCIDENT_MANAGE_ROLES = {"infosec"}
+INCIDENT_VIEW_ROLES = {"infosec", "it_head", "cto"}
+INCIDENT_REGISTER_SLUG = "zorchlin-burtgel"
+
+
+def incident_access(conn, user):
+    """(can_view, can_manage) for the Incident Register: Superadmin/InfoSec manage, IT Head/CTO read-only.
+    Uses effective VulnReg roles (own + active substitutions). Mirrors backend auth/incident_access.py."""
+    if not user:
+        return False, False
+    if is_superadmin(user):
+        return True, True
+    try:
+        ensure_vulnerabilities_table(conn)
+        roles = _vroles(vuln_user(conn, user))
+    except Exception:
+        roles = set()
+    can_manage = bool(roles & INCIDENT_MANAGE_ROLES)
+    return can_manage or bool(roles & INCIDENT_VIEW_ROLES), can_manage
+
+
+def vuln_has_role(user, role):
+    return is_superadmin(user) or role in _vroles(user)
+
+
+def vuln_is_admin(user):
+    """VulnReg administrator: Information Security specialist (or system Superadmin). Owns Settings."""
+    return vuln_has_role(user, "infosec")
+VULN_IN_USE_LABELS = {"yes": "Тийм", "no": "Үгүй", "": ""}
+VULN_ENV_PRESENT_LABELS = {"yes": "Тийм", "no": "Үгүй", "unknown": "Тодорхойгүй", "": ""}
+VULN_COMPROMISE_LABELS = {"yes": "Тийм", "no": "Үгүй", "checking": "Шалгаж байна", "": ""}
+VULN_SEVERITIES = ("critical", "high", "medium", "low")
+VULN_SEV_LABELS = {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low", "none": "None", "": "Үнэлээгүй"}
+VULN_DUE_SOON_SETTING = "vuln_due_soon_days"
+VULN_DUE_SOON_DEFAULT = 3
+VULN_FILES_DIR = DATA_DIR / "vuln_files"
+VULN_FILE_SUFFIXES = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt", ".log", ".json", ".xml",
+                      ".png", ".jpg", ".jpeg", ".gif", ".webp", ".zip", ".7z", ".html", ".md"}
+# Engineer's «Нотолгоо (халдлагын баталгаа)»: files tagged category='as_evidence' on vulnerability_files.
+# Images, Excel, Word, PDF and TXT.
+VULN_EVIDENCE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".xls", ".xlsx", ".doc", ".docx", ".pdf", ".txt"}
+VULN_FILE_CATEGORIES = ("", "as_evidence")
+VULN_FILE_MAX_BYTES = 20 * 1024 * 1024
+VULN_FILE_MAX_PER_UPLOAD = 10
+VULN_PAGE_SIZE = 10  # fixed number of rows per page on the vulnerability list
+VULN_FIELD_LABELS = {
+    "title": "Нэр", "cve_id": "CVE", "source": "Илрүүлсэн эх сурвалж", "source_url": "Эх сурвалжийн холбоос",
+    "published_date": "Нийтэлсэн огноо", "reported_date": "Мэдээлсэн огноо", "description": "Тайлбар",
+    "scope": "Хамрах хүрээ", "verification_method": "Нөлөөллийг шалгах арга",
+    "recommendation": "Засварлах зөвлөмж", "threat_trend": "Аюулын чиг хандлага", "impact": "Нөлөөлөл",
+    "risk_justification": "Эрсдэлийн үндэслэл", "remediation_notes": "Засварын тэмдэглэл",
+    "remediated_date": "Зассан огноо", "cvss_score": "CVSS оноо", "severity": "Түвшин",
+    "due_date": "Засварлах хугацаа", "asset_id": "Хөрөнгө", "department_id": "Хэлтэс",
+    "assignee_id": "Хариуцагч", "status": "Төлөв",
+    "owner_custodian": "Хөрөнгө эзэмшигч / Хариуцагч", "in_use": "Ашиглагдаж байгаа эсэх",
+    "affected_asset": "Нөлөөлж болзошгүй хөрөнгө / Систем",
+    "env_present": "Манай орчинд энэ эмзэг байдал байгаа эсэх",
+    "compromise_signs": "Халдлагад өртсөн шинж тэмдэг байгаа эсэх",
+    "ia_note": "Нөлөөллийн тайлбар (InfoSec)",
+    "as_scope": "Хамрах хүрээ (үнэлгээ)", "as_system_owner": "Систем ба хөрөнгийн эзэмшигч",
+    "as_version": "Одоогийн хувилбар", "as_internet_facing": "Интернэтэд нээлттэй эсэх",
+    "as_test_method": "Шалгасан арга", "as_evidence": "Нотолгоо (халдлагын баталгаа)",
+    "as_patch_available": "Patch гарсан эсэх", "as_business_impact": "Бизнесийн нөлөө",
+    "as_conclusion": "Үнэлгээний дүгнэлт", "as_affected": "Хөрөнгөд нөлөөлсөн эсэх",
+    "as_exploited": "Ашиглагдсан шинж тэмдэг", "as_incident_ref": "Зөрчлийн дугаар",
+    "ra_threat": "Аюул (Threat)", "ra_impacts": "Нөлөөллийн үнэлгээ (8 шалгуур)", "ra_likelihood": "Магадлал",
+    "ra_level": "Эрсдэлийн түвшин", "ra_due": "Эрсдэлийн үнэлгээний хугацаа", "ra_decision": "Эрсдэлийн шийдвэр",
+    "ra_decision_note": "Шийдвэрийн тайлбар", "risk_accept_reason": "Хүлээн зөвшөөрөх үндэслэл",
+    "risk_accept_until": "Хүлээн зөвшөөрөх хугацаа", "rm_plan": "Засварын төлөвлөгөө", "rm_actions": "Авах арга хэмжээ",
+    "rm_target_date": "Дуусгах товлосон огноо", "rm_change_ref": "Өөрчлөлтийн дугаар", "tm_controls": "Түр хамгаалалт (нөхөх хяналт)",
+    "tm_until": "Түр хамгаалалтын хүчинтэй хугацаа", "avoid_note": "Зогсоосон систем / үйлчилгээ",
+    "vf_note": "Баталгаажуулалтын тэмдэглэл", "closure_comment": "Хаалтын тайлбар", "residual_risk": "Үлдэгдэл эрсдэл",
+    "risk_status": "Эрсдэлийн төлөв",
+}
+VULN_YN_LABELS = {"yes": "Тийм", "no": "Үгүй", "unknown": "Тодорхойгүй", "": ""}
+VULN_DECISION_LABELS = {"mitigate": "Бууруулах (Patch / Mitigate)", "transfer": "Шилжүүлэх (Гэрээ / Даатгал / Нийлүүлэгч)",
+                        "avoid": "Зайлсхийх (систем зогсоох)", "accept": "Хүлээн зөвшөөрөх (CTO зөвшөөрөл)", "": ""}
+VULN_RISK_STATUS_LABELS = {"mitigated": "Бууруулсан", "residual": "Үлдэгдэл эрсдэлтэй", "accepted": "Хүлээн зөвшөөрсөн",
+                           "transferred": "Шилжүүлсэн", "avoided": "Зайлсхийсэн", "not_affected": "Нөлөөлөөгүй", "": ""}
+VULN_RISK_LEVEL_LABELS = {"low": "Бага (Low)", "medium": "Дунд (Medium)", "high": "Өндөр (High)", "": ""}
+# MAS-14 risk assessment: 8 impact criteria (1–5), likelihood (1–5), 5×5 matrix → Low / Medium / High.
+# Criteria names and the matrix thresholds are editable in Settings; these are the defaults.
+VULN_RISK_SETTING = "vuln_risk_matrix"
+VULN_RISK_DEFAULT = {
+    "criteria": ["Санхүүгийн нөлөө", "Нэр хүнд", "Хууль эрх зүй, зохицуулалт", "Үйл ажиллагааны тасралтгүй байдал",
+                 "Харилцагч / үйлчлүүлэгч", "Мэдээллийн нууцлал", "Мэдээллийн бүрэн бүтэн байдал", "Мэдээллийн хүртээмж"],
+    "low_max": 4, "medium_max": 12,
+}
+# Risk assessment deadline (business days) by severity; the remediation SLA keeps running meanwhile.
+VULN_RA_BUSINESS_DAYS = {"critical": 1, "high": 3}
+VULN_RA_BUSINESS_DAYS_DEFAULT = 5
+
+
+def vuln_risk_config(conn):
+    cfg = json.loads(json.dumps(VULN_RISK_DEFAULT))
+    raw = get_setting(conn, VULN_RISK_SETTING, "")
+    if raw:
+        try:
+            s = json.loads(raw)
+            crit = s.get("criteria")
+            if isinstance(crit, list) and len(crit) == 8 and all(isinstance(c, str) and c.strip() for c in crit):
+                cfg["criteria"] = [c.strip()[:120] for c in crit]
+            lo, med = s.get("low_max"), s.get("medium_max")
+            if isinstance(lo, int) and isinstance(med, int) and 1 <= lo < med < 25:
+                cfg["low_max"], cfg["medium_max"] = lo, med
+        except (ValueError, TypeError, AttributeError):
+            pass
+    return cfg
+
+
+def vuln_risk_level(score, cfg):
+    if score is None:
+        return ""
+    if score <= cfg["low_max"]:
+        return "low"
+    return "medium" if score <= cfg["medium_max"] else "high"
+
+
+def vuln_add_business_days(start, n):
+    d = start
+    while n > 0:
+        d += dt.timedelta(days=1)
+        if d.weekday() < 5:
+            n -= 1
+    return d
+
+
+def vuln_ra_due(severity, start=None):
+    start = start or now_utc().date()
+    n = VULN_RA_BUSINESS_DAYS.get((severity or "").lower(), VULN_RA_BUSINESS_DAYS_DEFAULT)
+    return vuln_add_business_days(start, n).isoformat()
+# Fields only a manager (admin / superadmin) may edit, in the order they are diffed for the activity log.
+_VULN_MANAGER_FIELDS = (
+    "title", "cve_id", "source", "source_url", "published_date", "reported_date", "description", "scope",
+    "verification_method", "recommendation", "threat_trend", "impact", "risk_justification",
+    "cvss_score", "severity", "due_date", "asset_id", "department_id", "owner_custodian", "in_use",
+    "affected_asset", "env_present", "compromise_signs",
+)
+_VULN_REMEDIATION_FIELDS = ("remediation_notes", "remediated_date")
+
+
+def vuln_can_manage(user):
+    """Information Security: register/edit, risk assessment, verification, closure."""
+    return vuln_has_role(user, "infosec")
+
+
+def vuln_can_delete(user):
+    return is_superadmin(user)
+
+
+def vuln_is_it_head(user):
+    """IT Head (or an active substitute): reviews new registrations, returns them, assigns engineers."""
+    return "it_head" in _vroles(user)
+
+
+def vuln_can_assign(user):
+    return vuln_has_role(user, "it_head")
+
+
+def vuln_can_assign_record(user, row):
+    """«Инженер томилох / солих» on a record: IT Head (own role or active substitute) only — no Superadmin bypass,
+    and never the engineer currently assigned to that record."""
+    return vuln_is_it_head(user) and not _vuln_is_assignee(user, row)
+
+
+def vuln_can_edit_record(user, row):
+    """Registration details are editable only by the InfoSec user who created the record."""
+    return bool(user) and "infosec" in _vroles(user) and row["created_by"] == user["id"]
+
+
+def vuln_is_cto(user):
+    return vuln_has_role(user, "cto")
+
+
+def _vuln_user_label(row):
+    if not row:
+        return ""
+    return (row["display_name"] or row["username"] or row["email"] or "").strip()
+
+
+def _vuln_validate(conn, user, form, existing=None):
+    """Validate a create/edit form posted by a manager.
+
+    Returns (values, errors): values maps column -> new value, errors maps form field -> message.
+    Severity and the SLA remediation_days are always derived from CVSS on the server.
+    """
+    errors = {}
+    get = lambda k: (form.get(k) or "").strip()
+    limits = dict(_VULN_TEXT_LIMITS, **_VULN_EXTRA_TEXT_LIMITS)
+    values = {k: get(k) for k in limits}
+    values["cve_id"] = values["cve_id"].upper()
+    # Fields hidden in the form designer are not posted: keep what is stored.
+    kept = set()
+    if existing is not None:
+        for key in list(limits) + ["published_date", "reported_date", "due_date"]:
+            if key not in form and key not in VULN_SECTION2_FIELDS:
+                kept.add(key)
+    for key in kept & set(limits):
+        values[key] = existing[key] or ""
+    for key, limit in limits.items():
+        if len(values[key]) > limit:
+            errors[key] = f"Хамгийн ихдээ {limit} тэмдэгт."
+    if not values["title"]:
+        errors["title"] = "Нэр заавал бөглөнө."
+    if values["cve_id"] and not _CVE_RE.match(values["cve_id"]):
+        errors["cve_id"] = "CVE ID буруу форматтай (жишээ: CVE-2026-12345)."
+    if values["source_url"]:
+        parsed = urlparse(values["source_url"])
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            errors["source_url"] = "http:// эсвэл https://-ээр эхэлсэн холбоос оруулна уу."
+    today = now_utc().date().isoformat()
+    for key in ("published_date", "reported_date", "due_date", "remediated_date"):
+        values[key] = (existing[key] or "") if key in kept else get(key)
+        if values[key] and not _valid_iso_date(values[key]) and key not in kept:
+            errors[key] = "Огноо буруу форматтай байна."
+    if values["published_date"] and values["published_date"] > today and "published_date" not in errors:
+        errors["published_date"] = "Ирээдүйн огноо байж болохгүй."
+    if values["reported_date"] and values["reported_date"] > today and "reported_date" not in errors:
+        errors["reported_date"] = "Ирээдүйн огноо байж болохгүй."
+    if (values["published_date"] and values["reported_date"] and values["reported_date"] < values["published_date"]
+            and "reported_date" not in errors):
+        errors["reported_date"] = "Нийтэлсэн огнооноос өмнө байж болохгүй."
+    if values["remediated_date"] and values["remediated_date"] > today and "remediated_date" not in errors:
+        errors["remediated_date"] = "Ирээдүйн огноо байж болохгүй."
+
+    cvss = None
+    cvss_raw = get("cvss_score")
+    if cvss_raw:
+        try:
+            cvss = float(Decimal(cvss_raw).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+            if not (0.0 <= cvss <= 10.0):
+                errors["cvss_score"] = "CVSS оноо 0.0–10.0 хооронд байх ёстой."
+        except (ArithmeticError, ValueError):
+            errors["cvss_score"] = "CVSS оноо тоо байх ёстой."
+    values["cvss_score"] = cvss
+    if existing is not None and _vuln_same(existing["cvss_score"], cvss):
+        # CVSS unchanged: keep the severity/SLA assigned at registration, even if the policy changed since
+        # (open records are re-evaluated only through Settings → "Дахин тооцоолох").
+        severity, remediation_days = existing["severity"], existing["remediation_days"]
+    else:
+        severity, remediation_days = cvss_severity(cvss, vuln_sla(conn))
+        if "due_date" in kept:
+            values["due_date"] = ""  # hidden deadline follows the new CVSS
+    values["severity"] = severity
+    values["remediation_days"] = remediation_days
+    if not values["due_date"] and remediation_days is not None and "reported_date" not in errors:
+        base = dt.date.fromisoformat(values["reported_date"]) if values["reported_date"] else now_utc().date()
+        values["due_date"] = (base + dt.timedelta(days=remediation_days)).isoformat()
+
+    # Asset: optional; must exist and (for non-superadmins) belong to the user's own department.
+    asset_id = None
+    asset_raw = get("asset_id")
+    asset_row = None
+    if asset_raw:
+        if asset_raw.isdigit():
+            asset_row = conn.execute("SELECT id, department_id FROM assets WHERE id = ?", (int(asset_raw),)).fetchone()
+        if not asset_row:
+            errors["asset_id"] = "Сонгосон хөрөнгө олдсонгүй."
+            asset_row = None
+        else:
+            asset_id = asset_row["id"]
+    elif "asset_id" not in form and existing is not None:
+        asset_id = existing["asset_id"]  # form now enters the asset as text; keep any older register link
+        if asset_id and not existing["affected_asset"] and values["affected_asset"]:
+            linked = conn.execute("SELECT asset_name FROM assets WHERE id = ?", (asset_id,)).fetchone()
+            if linked and values["affected_asset"] == (linked["asset_name"] or "").strip():
+                values["affected_asset"] = ""  # prefilled from the linked asset, not an actual edit
+    values["asset_id"] = asset_id
+
+    in_use = get("in_use")
+    if in_use not in VULN_IN_USE_LABELS:
+        errors["in_use"] = "Тийм эсвэл Үгүй сонгоно уу."
+        in_use = ""
+    values["in_use"] = in_use
+    for key, labels in (("env_present", VULN_ENV_PRESENT_LABELS), ("compromise_signs", VULN_COMPROMISE_LABELS)):
+        v = get(key)
+        if v not in labels:
+            errors[key] = "Жагсаалтаас сонгоно уу."
+            v = ""
+        values[key] = v
+    # Section 2 (asset and responsibility) is completed by the assigned engineer, not on the InfoSec form:
+    # keep whatever is stored when the form does not send these fields.
+    for key in VULN_SECTION2_FIELDS:
+        if key not in form:
+            values[key] = (existing[key] or "") if existing is not None else ""
+            errors.pop(key, None)
+
+    # Department is not entered on the form: it follows the asset, else stays as stored, else the registrant's.
+    if asset_row:
+        values["department_id"] = asset_row["department_id"]
+    elif existing is not None:
+        values["department_id"] = existing["department_id"]
+    else:
+        values["department_id"] = user["department_id"]
+    # Required flags set by InfoSec in the form designer (built-in registration fields).
+    reg = vuln_form_schema(conn, "register")
+    for f in _vuln_form_fields(reg):
+        if f["builtin"] and not f["block"] and f["required"] and not f["hidden"] and f["key"] in values:
+            if values[f["key"]] in (None, "") and f["key"] not in errors:
+                errors[f["key"]] = "Заавал бөглөнө."
+    return values, errors
+
+
+def _vuln_log(conn, vuln_id, user, action, field="", old="", new="", note=""):
+    conn.execute(
+        """INSERT INTO vulnerability_activity(vulnerability_id, actor_user_id, actor_name, action, field,
+               old_value, new_value, note, created_at) VALUES (?,?,?,?,?,?,?,?,?)""",
+        (vuln_id, user["id"] if user else None, _vuln_user_label(user) if user else "", action, field,
+         "" if old is None else str(old), "" if new is None else str(new), note or "", now_utc().isoformat()),
+    )
+
+
+def _vuln_notify(users, subject, lines, vuln_id):
+    """E-mail each user (skips users without an address; no-op when SMTP is not configured)."""
+    link = APP_URL.rstrip("/") + (f"/registry/vulnerabilities/{vuln_id}" if vuln_id else "/registry/vulnerabilities")
+    body = "\n".join(lines + ["", f"Дэлгэрэнгүй: {link}"])
+    sent = set()
+    for u in users:
+        addr = (u["email"] or "").strip() if u else ""
+        if addr and addr.lower() not in sent:
+            sent.add(addr.lower())
+            _send_async(addr, subject, body)
+
+
+def _vuln_role_users(conn, role):
+    """Active holders of a VulnReg role, plus anyone substituting for that role today."""
+    today = _vuln_today()
+    return conn.execute(
+        """SELECT * FROM users WHERE is_active = 1 AND (""" + _VULN_HAS_ROLE_SQL.format(col="vuln_role") + """ OR id IN (
+               SELECT substitute_id FROM vuln_substitutes WHERE role = ? AND revoked_at = ''
+               AND start_date <= ? AND end_date >= ?))""", (role, role, today, today)).fetchall()
+
+
+def _vuln_it_heads(conn):
+    return _vuln_role_users(conn, "it_head")
+
+
+def _vuln_notify_it_heads(conn, actor, vuln_id, resubmitted=False, ids=None):
+    """Tell the IT Head(s) and their substitutes that a registration awaits review (one mail per registration)."""
+    ids = ids or [vuln_id]
+    rows = [conn.execute(f"{_VULN_SELECT_SQL} WHERE v.id = ?", (i,)).fetchone() for i in ids]
+    row = rows[0]
+    what = "засварлаж дахин илгээлээ" if resubmitted else "бүртгэлээ"
+    lines = [
+        f"{_vuln_user_label(actor)} эмзэг байдал {what}. Хянаж, нөлөөлөх хөрөнгө бүрт хариуцах инженер томилно уу.",
+        "",
+        f"{row['cve_id'] + ' — ' if row['cve_id'] else ''}{row['title']}",
+        f"Түвшин: {VULN_SEV_LABELS.get((row['severity'] or '').lower(), row['severity'])}"
+        + (f" (CVSS {row['cvss_score']:.1f})" if row["cvss_score"] is not None else ""),
+        f"Засварлах хугацаа (SLA): {row['due_date'] or '—'}",
+        "",
+        "Нөлөөлөх хөрөнгө:",
+    ] + [f"  • {_vuln_ref(r)} — {r['asset_name'] or '—'}" for r in rows]
+    _vuln_notify(_vuln_it_heads(conn), f"[Эмзэг байдал] {_vuln_ref(row)} хянах хүсэлт", lines, vuln_id)
+
+
+def _vuln_notify_closed(conn, actor, row, status):
+    """Step 8: once a finding is closed, notify the IT Head and the CTO (and their substitutes)."""
+    users = list(_vuln_role_users(conn, "it_head")) + list(_vuln_role_users(conn, "cto"))
+    _vuln_notify(users, f"[Эмзэг байдал] {_vuln_ref(row)} хаагдлаа", [
+        f"{_vuln_user_label(actor)} дараах эмзэг байдлын бүртгэлийг хаалаа.", "",
+        f"{_vuln_ref(row)} — {row['title']}",
+        f"Мэдээллийн хөрөнгө / Систем: {row['asset_name'] or '—'}",
+        f"Эцсийн төлөв: {VULN_STATUS_LABELS.get(status, status)}",
+    ], row["id"])
+
+
+def _vuln_insert(conn, user, values, group_id=None):
+    """Register a finding. No assignee here: the IT Head reviews it and assigns an engineer (status stays New)."""
+    ts = now_utc().isoformat()
+    cur = conn.execute(
+        """INSERT INTO vulnerabilities(cve_id, title, source, source_url, published_date, reported_date,
+               description, scope, verification_method, recommendation, threat_trend, impact, risk_justification,
+               remediation_notes, cvss_score, severity, remediation_days, due_date, department_id, asset_id,
+               owner_custodian, in_use, affected_asset, env_present, compromise_signs,
+               status, created_by, updated_by, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (values["cve_id"], values["title"], values["source"], values["source_url"], values["published_date"],
+         values["reported_date"], values["description"], values["scope"], values["verification_method"],
+         values["recommendation"], values["threat_trend"], values["impact"], values["risk_justification"],
+         values["remediation_notes"], values["cvss_score"], values["severity"], values["remediation_days"],
+         values["due_date"], values["department_id"], values["asset_id"], values["owner_custodian"], values["in_use"],
+         values.get("affected_asset", ""), values.get("env_present", ""), values.get("compromise_signs", ""),
+         "new", user["id"], user["id"], ts, ts),
+    )
+    vuln_id = cur.lastrowid
+    conn.execute("UPDATE vulnerabilities SET group_id = ?, vuln_custom = ? WHERE id = ?",
+                 (group_id or vuln_id, values.get("vuln_custom") or "{}", vuln_id))
+    _vuln_log(conn, vuln_id, user, "created", "status", "", "new")
+    label = f"{values['cve_id']} — {values['title']}" if values["cve_id"] else values["title"]
+    record_audit(conn, user["id"], "create", "vulnerability", entity_id=vuln_id,
+                 department_id=values["department_id"], details=f"Эмзэг байдал бүртгэв: {label}")
+    return vuln_id
+
+
+VULN_DASHBOARD_TEMPLATE = BASE_DIR / "templates" / "vuln_dashboard.html"
+
+
+def _script_json(value):
+    """JSON safe to embed inside a <script> element."""
+    return (json.dumps(value, ensure_ascii=False)
+            .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+            .replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
+
+
+def _vuln_scope(user):
+    """SQL predicate limiting rows to what the user may see.
+
+    Roles with the "view_all" permission (Settings → access) see every record; otherwise a user sees what is
+    assigned to them or registered by them, plus the queue their role must act on. Soft-deleted rows never show.
+    """
+    if vuln_perm(user, "view_all"):
+        return "v.deleted_at = ''", []
+    parts, args = ["v.assignee_id = ?", "v.created_by = ?"], [user["id"], user["id"]]
+    if vuln_is_it_head(user):
+        parts.append("v.status = 'new'")
+    if vuln_has_role(user, "cto"):
+        parts.append("v.status = 'pending_cto'")
+    return f"v.deleted_at = '' AND ({' OR '.join(parts)})", args
+
+
+def _uname_sql(alias):
+    return f"COALESCE(NULLIF({alias}.display_name, ''), {alias}.username, {alias}.email, '')"
+
+
+_VULN_REF_SQL = "('VUL-' || substr(v.created_at, 1, 4) || '-' || printf('%04d', v.id))"
+_VULN_FROM_SQL = f"""
+    FROM vulnerabilities v
+    LEFT JOIN departments d ON d.id = v.department_id
+    LEFT JOIN assets a ON a.id = v.asset_id
+    LEFT JOIN departments ad ON ad.id = a.department_id
+    LEFT JOIN users cu ON cu.id = v.created_by
+    LEFT JOIN users au ON au.id = v.assignee_id
+    LEFT JOIN users ru ON ru.id = v.risk_accept_approver_id
+"""
+_VULN_SELECT_SQL = f"""
+    SELECT v.*, d.name AS department_name, COALESCE(NULLIF(v.affected_asset, ''), a.asset_name) AS asset_name, a.asset_type, a.owner AS asset_owner,
+           a.custodian AS asset_custodian, a.location AS asset_location, a.asset_category AS asset_category,
+           ad.name AS asset_department_name,
+           {_uname_sql('cu')} AS created_by_name, {_uname_sql('au')} AS assignee_name,
+           {_uname_sql('ru')} AS risk_approver_name
+""" + _VULN_FROM_SQL
+_VULN_SEV_RANK_SQL = ("CASE lower(v.severity) WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
+                      "WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END")
+_VULN_STATUS_RANK_SQL = "CASE v.status " + " ".join(
+    f"WHEN '{s}' THEN {i}" for i, s in enumerate(VULN_STATUS_ORDER)) + " ELSE 99 END"
+_VULN_OPEN_SQL = "v.status NOT IN (" + ", ".join(f"'{s}'" for s in VULN_CLOSED_STATUSES) + ")"
+_VULN_SORTS = {
+    "ref": "v.id",
+    "title": "ulower(v.title)",
+    "cve": "v.cve_id",
+    "asset": "ulower(COALESCE(NULLIF(v.affected_asset, ''), a.asset_name, ''))",
+    "dept": "ulower(COALESCE(d.name, ''))",
+    "severity": _VULN_SEV_RANK_SQL,
+    "status": _VULN_STATUS_RANK_SQL,
+    "created": "v.created_at",
+    "assignee": "ulower(" + _uname_sql("au") + ")",
+}
+
+
+def _vuln_prepare_conn(conn):
+    """Unicode-aware lower() so Cyrillic search and sorting are case-insensitive (SQLite lower() is ASCII-only)."""
+    conn.create_function("ulower", 1, lambda s: s.lower() if isinstance(s, str) else s, deterministic=True)
+    ensure_vulnerabilities_table(conn)
+
+
+def vuln_soon_days(conn):
+    """'Approaching deadline' threshold in days: app_settings[vuln_due_soon_days], else 3."""
+    raw = get_setting(conn, VULN_DUE_SOON_SETTING, "")
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return VULN_DUE_SOON_DEFAULT
+    return n if 0 <= n <= 90 else VULN_DUE_SOON_DEFAULT
+
+
+def _vuln_deadline(status, due, today, soon_days):
+    if status in VULN_CLOSED_STATUSES:
+        return {"kind": "done", "days": None}
+    if not due:
+        return {"kind": "none", "days": None}
+    try:
+        n = (dt.date.fromisoformat(due) - today).days
+    except ValueError:
+        return {"kind": "none", "days": None}
+    kind = "overdue" if n < 0 else ("soon" if n <= soon_days else "ontrack")
+    return {"kind": kind, "days": n}
+
+
+def _vuln_ref(r):
+    return f"VUL-{(r['created_at'] or '')[:4] or '0000'}-{r['id']:04d}"
+
+
+def _vuln_like(token):
+    return "%" + token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _vuln_int(value):
+    value = (value or "").strip()
+    return int(value) if value.isdigit() and len(value) < 12 else None
+
+
+def _vuln_todo_sql(user):
+    """SQL predicate: records waiting on this user's action (same rules as vuln_available_actions).
+
+    Engineer: assigned records to fill in / remediate / confirm shutdown. IT Head: new records to review and assign.
+    InfoSec: risk assessment, verification, closing a confirmed shutdown, and own returned records. CTO: risk acceptances.
+    """
+    parts, args = [], []
+    parts.append("(v.assignee_id = ? AND (v.status IN ('assigned', 'under_assessment', 'remediation')"
+                 " OR (v.status = 'avoidance' AND v.avoid_confirmed_at = '')))")
+    args.append(user["id"])
+    if vuln_is_it_head(user):
+        parts.append("v.status = 'new'")
+    if vuln_can_manage(user):
+        parts.append("v.status IN ('risk_assessment', 'verification')")
+        parts.append("(v.status = 'avoidance' AND v.avoid_confirmed_at <> '')")
+        parts.append("(v.status = 'returned' AND v.created_by = ?)")
+        args.append(user["id"])
+    if vuln_is_cto(user):
+        parts.append("v.status = 'pending_cto'")
+    return "(" + " OR ".join(parts) + ")", args
+
+
+def vuln_todo_count(conn, user):
+    scope_sql, scope_args = _vuln_scope(user)
+    todo_sql, todo_args = _vuln_todo_sql(user)
+    return conn.execute(f"SELECT COUNT(*) FROM vulnerabilities v WHERE {scope_sql} AND {todo_sql}",
+                        scope_args + todo_args).fetchone()[0]
+
+
+def _vuln_filters(query, user, today, soon_days):
+    """Translate query-string filters into SQL. Unknown/invalid values are ignored, not errors."""
+    where, args = [], []
+    q = qs_value(query, "q").strip()[:200]
+    for token in q.lower().split()[:8]:
+        like = _vuln_like(token)
+        where.append(
+            f"(ulower({_VULN_REF_SQL}) LIKE ? ESCAPE '\\' OR ulower(v.title) LIKE ? ESCAPE '\\' "
+            "OR ulower(v.cve_id) LIKE ? ESCAPE '\\' OR ulower(COALESCE(NULLIF(v.affected_asset, ''), a.asset_name, '')) LIKE ? ESCAPE '\\' "
+            "OR CAST(v.asset_id AS TEXT) = ? OR CAST(v.id AS TEXT) = ?)"
+        )
+        args += [like, like, like, like, token, token]
+    if qs_value(query, "todo") == "1":
+        todo_sql, todo_args = _vuln_todo_sql(user)
+        where.append(todo_sql)
+        args += todo_args
+    sev = qs_value(query, "sev").lower()
+    if sev in VULN_SEVERITIES:
+        where.append("lower(v.severity) = ?")
+        args.append(sev)
+    status = qs_value(query, "status")
+    if status == "open":
+        where.append(_VULN_OPEN_SQL)
+    elif status in VULN_STATUS_LABELS:
+        where.append("v.status = ?")
+        args.append(status)
+    asset = _vuln_int(qs_value(query, "asset"))
+    if asset is not None:
+        where.append("v.asset_id = ?")
+        args.append(asset)
+    dept = _vuln_int(qs_value(query, "dept"))
+    if dept is not None:
+        where.append("v.department_id = ?")
+        args.append(dept)
+    assignee = qs_value(query, "assignee")
+    if assignee == "me":
+        where.append("v.assignee_id = ?")
+        args.append(user["id"])
+    elif assignee == "none":
+        where.append("v.assignee_id IS NULL")
+    elif _vuln_int(assignee) is not None:
+        where.append("v.assignee_id = ?")
+        args.append(_vuln_int(assignee))
+    for key, expr, op in (("reg_from", "substr(v.created_at, 1, 10)", ">="), ("reg_to", "substr(v.created_at, 1, 10)", "<="),
+                          ("due_from", "v.due_date", ">="), ("due_to", "v.due_date", "<=")):
+        value = qs_value(query, key)
+        if value and _valid_iso_date(value):
+            where.append(f"{expr} <> '' AND {expr} {op} ?")
+            args.append(value)
+    deadline = qs_value(query, "deadline")
+    t = today.isoformat()
+    soon = (today + dt.timedelta(days=soon_days)).isoformat()
+    if deadline == "overdue":
+        where.append(f"{_VULN_OPEN_SQL} AND v.due_date <> '' AND v.due_date < ?")
+        args.append(t)
+    elif deadline == "soon":
+        where.append(f"{_VULN_OPEN_SQL} AND v.due_date >= ? AND v.due_date <= ?")
+        args += [t, soon]
+    elif deadline == "ontrack":
+        where.append(f"{_VULN_OPEN_SQL} AND v.due_date > ?")
+        args.append(soon)
+    elif deadline == "none":
+        where.append(f"{_VULN_OPEN_SQL} AND v.due_date = ''")
+    return where, args
+
+
+def _vuln_order_sql(query):
+    key = qs_value(query, "sort")
+    direction = "ASC" if qs_value(query, "dir").lower() == "asc" else "DESC"
+    if key == "due":
+        # Records without a deadline always sort last.
+        return f"CASE WHEN v.due_date = '' THEN 1 ELSE 0 END, v.due_date {direction}, v.id DESC"
+    expr = _VULN_SORTS.get(key)
+    if not expr:
+        return "v.id DESC"
+    return f"{expr} {direction}, v.id DESC"
+
+
+def _vuln_list_item(r, today, soon_days):
+    sev = (r["severity"] or "").lower()
+    return {
+        "id": r["id"],
+        "ref": _vuln_ref(r),
+        "title": r["title"],
+        "cve": r["cve_id"],
+        "asset": {"id": r["asset_id"], "name": r["asset_name"] or ""} if (r["asset_id"] or r["asset_name"]) else None,
+        "dept": r["department_name"] or "",
+        "deptId": r["department_id"],
+        "severity": sev if sev in VULN_SEV_LABELS else "",
+        "cvss": r["cvss_score"],
+        "status": r["status"] or "new",
+        "statusLabel": VULN_STATUS_LABELS.get(r["status"] or "new", r["status"]),
+        "created": (r["created_at"] or "")[:10],
+        "due": r["due_date"] or "",
+        "deadline": _vuln_deadline(r["status"], r["due_date"], today, soon_days),
+        "assignee": {"id": r["assignee_id"], "name": r["assignee_name"] or ""} if r["assignee_id"] else None,
+    }
+
+
+def vuln_kpis(conn, user, today, soon_days):
+    scope_sql, scope_args = _vuln_scope(user)
+    t = today.isoformat()
+    soon = (today + dt.timedelta(days=soon_days)).isoformat()
+    row = conn.execute(
+        f"""SELECT COUNT(*) AS total,
+                   COALESCE(SUM(CASE WHEN {_VULN_OPEN_SQL} THEN 1 ELSE 0 END), 0) AS open,
+                   COALESCE(SUM(CASE WHEN v.status IN ('under_assessment', 'risk_assessment', 'pending_cto', 'remediation',
+                                     'verification', 'temp_mitigation', 'avoidance') THEN 1 ELSE 0 END), 0) AS working,
+                   COALESCE(SUM(CASE WHEN v.status IN ('closed', 'not_affected', 'transferred') THEN 1 ELSE 0 END), 0) AS closed,
+                   COALESCE(SUM(CASE WHEN {_VULN_OPEN_SQL} AND lower(v.severity) = 'critical' THEN 1 ELSE 0 END), 0) AS critical,
+                   COALESCE(SUM(CASE WHEN {_VULN_OPEN_SQL} AND lower(v.severity) = 'high' THEN 1 ELSE 0 END), 0) AS high,
+                   COALESCE(SUM(CASE WHEN {_VULN_OPEN_SQL} AND lower(v.severity) = 'critical' AND v.due_date <> ''
+                                     AND v.due_date < ? THEN 1 ELSE 0 END), 0) AS critical_overdue,
+                   COALESCE(SUM(CASE WHEN {_VULN_OPEN_SQL} AND v.due_date <> '' AND v.due_date < ? THEN 1 ELSE 0 END), 0) AS overdue,
+                   COALESCE(SUM(CASE WHEN {_VULN_OPEN_SQL} AND v.due_date >= ? AND v.due_date <= ? THEN 1 ELSE 0 END), 0) AS soon
+            FROM vulnerabilities v WHERE {scope_sql}""",
+        [t, t, t, soon] + scope_args,
+    ).fetchone()
+    return dict(row)
+
+
+def vuln_api_list(conn, user, query):
+    today = now_utc().date()
+    soon_days = vuln_soon_days(conn)
+    scope_sql, scope_args = _vuln_scope(user)
+    where, args = _vuln_filters(query, user, today, soon_days)
+    where_sql = " AND ".join([scope_sql] + where)
+    all_args = scope_args + args
+    total = conn.execute(f"SELECT COUNT(*) {_VULN_FROM_SQL} WHERE {where_sql}", all_args).fetchone()[0]
+    per = VULN_PAGE_SIZE
+    pages = max(1, -(-total // per))
+    page = min(max(_vuln_int(qs_value(query, "page")) or 1, 1), pages)
+    rows = conn.execute(
+        f"{_VULN_SELECT_SQL} WHERE {where_sql} ORDER BY {_vuln_order_sql(query)} LIMIT ? OFFSET ?",
+        all_args + [per, (page - 1) * per],
+    ).fetchall()
+    return {
+        "rows": [_vuln_list_item(r, today, soon_days) for r in rows],
+        "total": total, "page": page, "pages": pages, "per": per,
+        "kpis": vuln_kpis(conn, user, today, soon_days),
+        "todoCount": vuln_todo_count(conn, user),
+        "today": today.isoformat(), "soonDays": soon_days,
+    }
+
+
+def vuln_api_options(conn, user):
+    """Reference data for filters and forms, limited to what the user may use."""
+    departments = [{"id": r["id"], "name": r["name"]} for r in conn.execute("SELECT id, name FROM departments ORDER BY name")]
+    if vuln_can_manage(user) or vuln_perm(user, "view_all"):
+        asset_rows = conn.execute(
+            "SELECT a.id, a.asset_name, a.owner, a.custodian, d.name AS dept FROM assets a "
+            "LEFT JOIN departments d ON d.id = a.department_id ORDER BY a.asset_name").fetchall()
+    else:
+        asset_rows = conn.execute(
+            """SELECT a.id, a.asset_name, a.owner, a.custodian, d.name AS dept FROM assets a LEFT JOIN departments d ON d.id = a.department_id
+               WHERE a.id IN (SELECT asset_id FROM vulnerabilities WHERE assignee_id = ? AND deleted_at = '')
+               ORDER BY a.asset_name""", (user["id"],)).fetchall()
+    assets = [{"id": r["id"], "name": r["asset_name"], "dept": r["dept"] or "",
+               "owner": r["owner"] or "", "custodian": r["custodian"] or ""} for r in asset_rows]
+    users = []
+    if vuln_can_manage(user) or vuln_can_assign(user):
+        # Assignee filter + engineer picker: only people who hold a VulnReg role.
+        users = [{"id": r["id"], "name": _vuln_user_label(r), "dept": r["dept"] or "", "roles": vuln_roles_of(r)}
+                 for r in conn.execute(
+            """SELECT u.id, u.display_name, u.username, u.email, u.vuln_role, d.name AS dept FROM users u
+               LEFT JOIN departments d ON d.id = u.department_id WHERE u.is_active = 1 AND u.vuln_role <> ''
+               ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username)""")]
+    return {
+        "departments": departments, "assets": assets, "users": users,
+        "engineers": [u for u in users if "engineer" in u["roles"]],
+        "statuses": [{"key": k, "label": VULN_STATUS_LABELS[k]} for k in VULN_STATUS_ORDER],
+        "assetForm": _vuln_asset_form_meta(user) if vuln_can_manage(user) else None,
+        "sla": vuln_sla(conn),
+        "risk": vuln_risk_config(conn),
+    }
+
+
+def _vuln_asset_form_meta(user):
+    """Field definitions for registering a new asset from the vulnerability form (same rules as the asset register)."""
+    def opts(field):
+        return [{"value": o[1], "label": o[0]} if isinstance(o, tuple) else {"value": o, "label": o}
+                for o in DROPDOWN_OPTIONS.get(field, [])]
+    codes = [{"value": code, "label": f"{code} — {name}", "group": group}
+             for group, rows in KOD_TABLE_DATA for name, code, _ in rows]
+    known = {c["value"] for c in codes}
+    codes += [{"value": c, "label": c, "group": ""} for c in DROPDOWN_OPTIONS["asset_group_code"] if c not in known]
+    fields = []
+    for field, label, required in ASSET_FIELDS:
+        if field in ASSET_COMPUTED_FIELDS:
+            continue
+        fields.append({"name": field, "label": label, "required": required,
+                       "options": codes if field == "asset_group_code" else (opts(field) or None)})
+    return {
+        "fields": fields,
+        "frequencies": FREQUENCY_OPTIONS,
+        "deptLocked": False,
+        "deptId": user["department_id"],
+    }
+
+
+def vuln_api_create_asset(conn, user, form):
+    """Register a new asset in the asset register from inside the vulnerability form.
+
+    Uses the asset register's own validator. Admins may only add to their own department
+    (matching which assets they may link to a vulnerability); a superadmin picks the department.
+    """
+    if not vuln_can_manage(user):
+        return 403, {"error": "Хөрөнгө бүртгэх эрхгүй."}
+    # InfoSec registers affected assets organisation-wide, so the department is chosen on the form.
+    dept_raw = (form.get("department_id") or "").strip()
+    dept_id = int(dept_raw) if dept_raw.isdigit() else None
+    department = conn.execute("SELECT * FROM departments WHERE id = ?", (dept_id,)).fetchone() if dept_id else None
+    if not department:
+        return 400, {"error": "Хэлтэс сонгоно уу.", "fields": {"department_id": "Хэлтэс сонгоно уу."}}
+    permissions = get_department_permissions(conn, department["id"])
+    values, error = validate_asset_form(form, user, permissions)
+    if error:
+        field = next((f for f, label, _ in ASSET_FIELDS if error.startswith(label)), None)
+        return 400, {"error": error, "fields": {field: error} if field else {}}
+    if len(values["asset_name"]) > 300:
+        return 400, {"error": "Нэр хэт урт байна.", "fields": {"asset_name": "Хамгийн ихдээ 300 тэмдэгт."}}
+    dup = conn.execute("SELECT id FROM assets WHERE department_id = ? AND lower(trim(asset_name)) = lower(?)",
+                       (department["id"], values["asset_name"])).fetchone()
+    if dup:
+        msg = f"Энэ хэлтэст ийм нэртэй хөрөнгө (#{dup['id']}) бүртгэлтэй байна. Жагсаалтаас сонгоно уу."
+        return 409, {"error": msg, "fields": {"asset_name": msg}, "existingId": dup["id"]}
+    asset_id = insert_asset(conn, department["id"], values)
+    record_audit(conn, user["id"], "create", "asset", entity_id=asset_id, department_id=department["id"],
+                 details=f"{values['asset_name']} хөрөнгө үүслээ (эмзэг байдлын бүртгэлээс).")
+    conn.commit()
+    return 200, {"asset": {"id": asset_id, "name": values["asset_name"], "dept": department["name"], "deptId": department["id"],
+                           "owner": values.get("owner", ""), "custodian": values.get("custodian", "")}}
+
+
+def vuln_get(conn, user, vuln_id):
+    scope_sql, scope_args = _vuln_scope(user)
+    return conn.execute(f"{_VULN_SELECT_SQL} WHERE v.id = ? AND {scope_sql}", [vuln_id] + scope_args).fetchone()
+
+
+def _vuln_is_assignee(user, row):
+    return bool(row["assignee_id"]) and row["assignee_id"] == user["id"]
+
+
+def vuln_available_actions(user, row):
+    """Workflow actions this user may perform on the record now (server-side source of truth)."""
+    status = row["status"] or "new"
+    out = []
+    for key, (froms, actor, _label) in VULN_ACTIONS.items():
+        if status not in froms:
+            continue
+        if actor == "assignee":
+            # The assigned engineer acts; InfoSec may also maintain the engineer's drafts and resume work.
+            ok = (_vuln_is_assignee(user, row) or is_superadmin(user)
+                  or (vuln_can_manage(user) and key in ("save_assessment", "save_remediation", "temp_resume")))
+        else:
+            ok = vuln_has_role(user, actor)
+        if key == "resubmit" and not vuln_can_edit_record(user, row):
+            ok = False  # "Засаад дахин илгээх" belongs with editing: only the InfoSec user who created the record
+        if key == "avoid_close" and not row["avoid_confirmed_at"]:
+            ok = False
+        if key == "verify_temp" and row["rm_fix_type"] != "temp":
+            ok = False
+        # Segregation of duties (a person may hold several roles): nobody approves the risk acceptance they
+        # requested, and nobody verifies / closes the fix they implemented themselves.
+        if key in ("cto_approve", "cto_reject") and row["risk_accept_requested_by"] == user["id"]:
+            ok = False
+        if key in ("verify_fail", "verify_temp", "close") and _vuln_is_assignee(user, row):
+            ok = False
+        if ok:
+            out.append(key)
+    return out
+
+
+_VULN_SILENT_FIELDS = {"status", "updated_at", "updated_by", "closed_at", "as_submitted_at", "ra_assessed_by", "ra_assessed_at",
+                       "ra_impact", "ra_score", "risk_accept_requested_by", "risk_accept_approver_id", "rm_fix_type",
+                       "avoid_confirmed_at", "ia_decided_by", "ia_decided_at"}
+_VULN_ACTION_EVENTS = {
+    "submit_assessment": "assessment_submitted", "risk_assess": "risk_assessed", "cto_approve": "cto_approved",
+    "cto_reject": "cto_rejected", "avoid_confirm": "avoid_confirmed", "submit_fix": "fix_submitted",
+    "submit_temp": "temp_submitted", "cannot_remediate": "cannot_remediate", "verify_fail": "verify_failed",
+    "verify_temp": "verify_temp", "close": "closed", "avoid_close": "closed",
+}
+
+
+def _vuln_apply(conn, user, row, cols, note="", event="", audit_label=""):
+    """Persist column changes; every changed field and the status change go to the append-only activity log."""
+    changed = {c: v for c, v in cols.items() if not _vuln_same(row[c], v)}
+    if changed:
+        upd = dict(changed, updated_at=now_utc().isoformat(), updated_by=user["id"] if user else None)
+        conn.execute("UPDATE vulnerabilities SET " + ", ".join(f"{c} = ?" for c in upd) + " WHERE id = ?",
+                     list(upd.values()) + [row["id"]])
+    for field, new in changed.items():
+        if field == "vuln_custom":
+            _vuln_custom_log(conn, row, user, vuln_custom_values(row), json.loads(new or "{}"))
+        elif field not in _VULN_SILENT_FIELDS:
+            _vuln_log(conn, row["id"], user, "updated", field, _vuln_display(conn, field, row[field]),
+                      _vuln_display(conn, field, new))
+    if event:
+        _vuln_log(conn, row["id"], user, event, "", "", "", note)
+    if "status" in changed:
+        _vuln_log(conn, row["id"], user, "status_changed", "status", row["status"], changed["status"], "" if event else note)
+    if changed or event:
+        what = audit_label or ", ".join(("Нэмэлт талбар" if f == "vuln_custom" else VULN_FIELD_LABELS.get(f, f))
+                                        for f in changed if f not in _VULN_SILENT_FIELDS)
+        st = (f" ({VULN_STATUS_LABELS.get(row['status'], row['status'])} → {VULN_STATUS_LABELS.get(changed['status'], changed['status'])})"
+              if "status" in changed else "")
+        record_audit(conn, user["id"] if user else None, "update", "vulnerability", entity_id=row["id"],
+                     department_id=row["department_id"], details=f"{_vuln_ref(row)}: {what}{st}")
+    return changed
+
+
+def _vf(form, key, limit=10000):
+    return (form.get(key) or "").strip()[:limit]
+
+
+def _vuln_fail(errors):
+    return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+
+
+def _vuln_reload(conn, row):
+    return conn.execute(f"{_VULN_SELECT_SQL} WHERE v.id = ?", (row["id"],)).fetchone()
+
+
+def _vuln_user_by_id(conn, uid):
+    return conn.execute("SELECT * FROM users WHERE id = ?", (uid,)).fetchone() if uid else None
+
+
+def _vuln_record_lines(row):
+    return [f"{_vuln_ref(row)} — {row['title']}", f"Мэдээллийн хөрөнгө / Систем: {row['asset_name'] or '—'}",
+            f"Түвшин: {VULN_SEV_LABELS.get((row['severity'] or '').lower(), row['severity'])}"
+            + (f" (CVSS {row['cvss_score']:.1f})" if row["cvss_score"] is not None else "")]
+
+
+VULN_SECTION2_FIELDS = ("affected_asset", "owner_custodian", "in_use", "env_present", "compromise_signs")
+
+
+def _vuln_section2_values(form, row):
+    """Section 2 as entered by the assigned engineer (fields not posted keep their stored value)."""
+    values, errors = {}, {}
+    for f, limit in (("affected_asset", 300), ("owner_custodian", 300)):
+        values[f] = _vf(form, f, limit) if f in form else (row[f] or "")
+    for f, labels in (("in_use", VULN_IN_USE_LABELS), ("env_present", VULN_ENV_PRESENT_LABELS),
+                      ("compromise_signs", VULN_COMPROMISE_LABELS)):
+        v = _vf(form, f, 20) if f in form else (row[f] or "")
+        if v not in labels:
+            errors[f] = "Жагсаалтаас сонгоно уу."
+            v = ""
+        values[f] = v
+    return values, errors
+
+
+_VULN_ASSESS_TEXT = ("as_scope", "as_system_owner", "as_version", "as_test_method", "as_evidence",
+                     "as_conclusion", "as_incident_ref")
+_VULN_ASSESS_CHOICE = {"as_internet_facing": ("yes", "no"), "as_patch_available": ("yes", "no", "unknown"),
+                       "as_affected": ("yes", "no"), "as_exploited": ("yes", "no")}
+
+
+def _vuln_assessment_values(form, row):
+    values, errors = {}, {}
+    for f in _VULN_ASSESS_TEXT:
+        values[f] = _vf(form, f, 300 if f == "as_incident_ref" else 10000) if f in form else (row[f] or "")
+    for f, choices in _VULN_ASSESS_CHOICE.items():
+        if f == "as_affected":
+            continue  # decided by InfoSec (in the risk assessment), not by the engineer
+        v = _vf(form, f, 20) if f in form else (row[f] or "")
+        if v and v not in choices:
+            errors[f] = "Сонголт буруу."
+            v = ""
+        values[f] = v
+    return values, errors
+
+
+def _vuln_flag_incident(conn, user, row, values):
+    """Signs of exploitation → the separate Incident Management process must be started."""
+    if values.get("as_exploited") != "yes" or row["as_exploited"] == "yes":
+        return None
+    note = "Эмзэг байдал ашиглагдсан шинж тэмдэг илэрсэн — Зөрчлийн удирдлагын процессыг эхлүүлэх шаардлагатай."
+    _vuln_log(conn, row["id"], user, "incident_flagged", "", "", values.get("as_incident_ref") or "", note)
+    users = list(_vuln_role_users(conn, "infosec")) + list(_vuln_role_users(conn, "it_head"))
+    lines = [f"{_vuln_user_label(user)} үнэлгээний явцад эмзэг байдал ашиглагдсан шинж тэмдэг (сэжигтэй лог, хандалт) илрүүллээ.",
+             "Зөрчлийн удирдлагын процессыг тусад нь эхлүүлнэ үү: " + APP_URL.rstrip("/") + "/incidents/", ""] + _vuln_record_lines(row)
+    if values.get("as_incident_ref"):
+        lines.append(f"Зөрчлийн дугаар: {values['as_incident_ref']}")
+    return lambda: _vuln_notify(users, f"[ЯАРАЛТАЙ] {_vuln_ref(row)} — ашиглагдсан шинж тэмдэг илэрлээ", lines, row["id"])
+
+
+def _vuln_risk_values(conn, form, row):
+    cfg = vuln_risk_config(conn)
+    errors = {}
+    impacts = []
+    for i in range(1, 9):
+        raw = _vf(form, f"impact_{i}", 2)
+        if raw:
+            if raw.isdigit() and 1 <= int(raw) <= 5:
+                impacts.append(int(raw))
+            else:
+                errors[f"impact_{i}"] = "1–5"
+                impacts.append(None)
+        else:
+            impacts.append(None)
+    lk_raw = _vf(form, "ra_likelihood", 2)
+    likelihood = int(lk_raw) if lk_raw.isdigit() and 1 <= int(lk_raw) <= 5 else None
+    if lk_raw and likelihood is None:
+        errors["ra_likelihood"] = "1–5"
+    complete = all(v is not None for v in impacts) and likelihood is not None
+    impact = max(impacts) if complete else None
+    score = impact * likelihood if complete else None
+    values = {
+        "ra_threat": _vf(form, "ra_threat", 5000) if "ra_threat" in form else (row["ra_threat"] or ""),
+        "ra_impacts": json.dumps(impacts) if any(v is not None for v in impacts) else "",
+        "ra_impact": impact, "ra_likelihood": likelihood, "ra_score": score,
+        "ra_level": vuln_risk_level(score, cfg),
+        "ra_decision_note": _vf(form, "ra_decision_note", 5000) if "ra_decision_note" in form else (row["ra_decision_note"] or ""),
+    }
+    return values, errors, complete
+
+
+def vuln_api_action(conn, user, row, form):
+    action = _vf(form, "action", 40)
+    if action not in VULN_ACTIONS:
+        return 400, {"error": "Үйлдэл буруу байна."}
+    status = row["status"] or "new"
+    if status not in VULN_ACTIONS[action][0]:
+        return 409, {"error": f"«{VULN_STATUS_LABELS.get(status, status)}» төлөвт энэ үйлдлийг хийх боломжгүй. Хуудсаа дахин ачаална уу."}
+    if action not in vuln_available_actions(user, row):
+        return 403, {"error": "Энэ үйлдлийг хийх эрх танд алга."}
+    ts = now_utc().isoformat()
+    today = _vuln_today()
+    note = _vf(form, "note", 5000)
+    label = VULN_ACTIONS[action][2]
+    event = _VULN_ACTION_EVENTS.get(action, "")
+    after = []  # notifications sent after commit
+
+    if action == "return":
+        if not note:
+            return _vuln_fail({"note": "Юуг засах шаардлагатайг бичнэ үү."})
+        _vuln_apply(conn, user, row, {"status": "returned"}, note, audit_label=label)
+        creator = _vuln_user_by_id(conn, row["created_by"])
+        after.append(lambda: _vuln_notify([creator], f"[Эмзэг байдал] {_vuln_ref(row)} засварлуулахаар буцаалаа", [
+            f"{_vuln_user_label(user)} таны бүртгэсэн эмзэг байдлыг мэдээлэл дутуу гэж буцаалаа.", ""]
+            + _vuln_record_lines(row) + ["", "Тайлбар:", note], row["id"]))
+        msg = "Бүртгэлийг InfoSec-д буцаалаа."
+
+    elif action == "resubmit":
+        _vuln_apply(conn, user, row, {"status": "new"}, note, audit_label=label)
+        after.append(lambda: _vuln_notify_it_heads(conn, user, row["id"], resubmitted=True))
+        msg = "Дахин илгээж, IT-ийн даргад мэдэгдлээ."
+
+    elif action in ("save_assessment", "submit_assessment"):
+        values, errors = _vuln_assessment_values(form, row)
+        sec2, sec2_errors = _vuln_section2_values(form, row)
+        values.update(sec2)
+        errors.update(sec2_errors)
+        submitting = action == "submit_assessment"
+        custom, cerrors = _vuln_custom_parse(conn, "engineer", form, row, submitting)
+        errors.update(cerrors)
+        values["vuln_custom"] = json.dumps(custom, ensure_ascii=False)
+        if submitting:
+            eng = vuln_form_schema(conn, "engineer")  # required flags are managed by InfoSec in Settings → Маягт
+            for fd in _vuln_form_fields(eng):
+                f = fd["key"]
+                if fd["builtin"] and not fd["block"] and fd["required"] and not fd["hidden"] and f in values:
+                    if not values[f] and f not in errors:
+                        errors[f] = "Заавал бөглөнө."
+            has_evidence = conn.execute(
+                "SELECT 1 FROM vulnerability_files WHERE vulnerability_id = ? AND category = 'as_evidence' AND deleted_at = ''",
+                (row["id"],)).fetchone()
+            if vuln_form_required(eng, "evidence_files") and not has_evidence:
+                errors["evidence_files"] = "Нотолгооны файлыг хавсаргана уу."
+        if errors:
+            return _vuln_fail(errors)
+        notify = _vuln_flag_incident(conn, user, row, values)
+        if notify:
+            after.append(notify)
+        if action == "save_assessment":
+            if (row["status"] or "") == "assigned":
+                values["status"] = "under_assessment"  # first draft saved: work has started
+            _vuln_apply(conn, user, row, values, audit_label="Хөрөнгө ба хариуцлага, үнэлгээ хадгалав")
+            msg = "Хадгалагдлаа."
+        else:
+            # Inspection date = submission time (recorded automatically). InfoSec now decides whether the asset is affected.
+            values.update(status="risk_assessment", as_submitted_at=ts, ra_due=vuln_ra_due(row["severity"]), ra_decision="")
+            _vuln_apply(conn, user, row, values, note or values["as_conclusion"], event,
+                        audit_label="Хөрөнгө ба хариуцлага, үнэлгээ илгээв — InfoSec эрсдэлийн үнэлгээ хийнэ")
+            infosec = _vuln_role_users(conn, "infosec")
+            after.append(lambda: _vuln_notify(infosec, f"[Эмзэг байдал] {_vuln_ref(row)} эрсдэлийн үнэлгээ хийх", [
+                f"{_vuln_user_label(user)} хөрөнгө ба хариуцлагын мэдээлэл, үнэлгээгээ илгээлээ.",
+                "Хөрөнгөд нөлөөлсөн эсэхийг тодорхойлж, эрсдэлийн үнэлгээ хийнэ үү.", ""]
+                + _vuln_record_lines(_vuln_reload(conn, row)), row["id"]))
+            msg = "Илгээгдлээ. InfoSec хөрөнгөд нөлөөлсөн эсэхийг тодорхойлж, эрсдэлийн үнэлгээ хийнэ."
+
+    elif action == "risk_assess" and (row["as_affected"] or "") != "yes" and _vf(form, "as_affected", 20) == "no":
+        # Not affected: explanation required (evidence goes to «Нотлох баримт»); close without a risk assessment.
+        ia_note = _vf(form, "ia_note", 5000)
+        if not ia_note:
+            return _vuln_fail({"ia_note": "Нөлөөлөөгүй гэх тайлбарыг бичнэ үү."})
+        values = {"as_affected": "no", "ia_note": ia_note, "ia_decided_by": user["id"], "ia_decided_at": ts,
+                  "status": "not_affected", "closed_at": ts, "risk_status": "not_affected", "ra_decision": ""}
+        _vuln_apply(conn, user, row, values, ia_note, "impact_decided", audit_label="Хөрөнгөд нөлөөлөөгүй — хаав")
+        after.append(lambda: _vuln_notify_closed(conn, user, _vuln_reload(conn, row), "not_affected"))
+        msg = "Хөрөнгөд нөлөөлөөгүй тул бүртгэл хаагдлаа."
+
+    elif action == "risk_assess":
+        values, errors, complete = _vuln_risk_values(conn, form, row)
+        affected_extra = {}
+        if (row["as_affected"] or "") != "yes":
+            affected = _vf(form, "as_affected", 20)
+            if affected == "yes":
+                affected_extra = {"as_affected": "yes", "ia_note": _vf(form, "ia_note", 5000),
+                                  "ia_decided_by": user["id"], "ia_decided_at": ts}
+            elif _vf(form, "ra_decision", 20):
+                errors["as_affected"] = "Хөрөнгөд нөлөөлсөн эсэхийг сонгоно уу."
+        decision = _vf(form, "ra_decision", 20)
+        if decision not in VULN_DECISION_LABELS:
+            errors["ra_decision"] = "Шийдвэр буруу."
+        risk_form = vuln_form_schema(conn, "risk")
+        custom, cerrors = _vuln_custom_parse(conn, "risk", form, row, bool(decision))
+        errors.update(cerrors)
+        values["vuln_custom"] = json.dumps(custom, ensure_ascii=False)
+        if decision:
+            if not values["ra_threat"] and vuln_form_required(risk_form, "ra_threat"):
+                errors["ra_threat"] = "Аюулыг тодорхойлно уу."
+            if not values["ra_decision_note"] and vuln_form_required(risk_form, "ra_decision_note"):
+                errors["ra_decision_note"] = "Шийдвэрийн үндэслэлийг бичнэ үү."
+            for i in range(1, 9):
+                if f"impact_{i}" not in errors and not _vf(form, f"impact_{i}", 2):
+                    errors[f"impact_{i}"] = "1–5"
+            if values["ra_likelihood"] is None and "ra_likelihood" not in errors:
+                errors["ra_likelihood"] = "Магадлал сонгоно уу."
+        if decision in ("transfer", "accept", "avoid") and not values["ra_decision_note"]:
+            errors["ra_decision_note"] = "Шийдвэрийн үндэслэлийг бичнэ үү."
+        until = _vf(form, "risk_accept_until", 10)
+        if decision == "accept":
+            if not until or not _valid_iso_date(until):
+                errors["risk_accept_until"] = "Хүлээн зөвшөөрөх хугацааг оруулна уу."
+            elif until <= today:
+                errors["risk_accept_until"] = "Ирээдүйн огноо байх ёстой."
+        if decision == "transfer":
+            nfiles = conn.execute("SELECT COUNT(*) FROM vulnerability_files WHERE vulnerability_id = ? AND deleted_at = ''",
+                                  (row["id"],)).fetchone()[0]
+            if not nfiles:
+                errors["ra_decision"] = "Шилжүүлсэн нотлох баримтыг (гэрээ, даатгал, нийлүүлэгчийн баталгаа) эхлээд хавсаргана уу."
+        if errors:
+            return _vuln_fail(errors)
+        values.update(ra_assessed_by=user["id"], ra_assessed_at=ts, ra_decision=decision)
+        values.update(affected_extra)
+        if not decision:
+            _vuln_apply(conn, user, row, values, audit_label="Эрсдэлийн үнэлгээ (ноорог) хадгалав")
+            msg = "Эрсдэлийн үнэлгээ хадгалагдлаа."
+        else:
+            dnote = values["ra_decision_note"]
+            summary = (f"Эрсдэл: {VULN_RISK_LEVEL_LABELS[values['ra_level']]} (нөлөөлөл {values['ra_impact']} × магадлал "
+                       f"{values['ra_likelihood']} = {values['ra_score']}). Шийдвэр: {VULN_DECISION_LABELS[decision]}."
+                       + (f"\n{dnote}" if dnote else ""))
+            assignee = _vuln_user_by_id(conn, row["assignee_id"])
+            if decision == "mitigate":
+                values["status"] = "remediation"
+                after.append(lambda: _vuln_notify([assignee], f"[Эмзэг байдал] {_vuln_ref(row)} засвар хийх", [
+                    "Эрсдэлийн үнэлгээгээр эрсдэлийг бууруулах (засварлах) шийдвэр гарлаа. Засварын төлөвлөгөөгөө оруулна уу.", ""]
+                    + _vuln_record_lines(row) + [f"Засварлах хугацаа (SLA): {row['due_date'] or '—'}"], row["id"]))
+            elif decision == "transfer":
+                values.update(status="transferred", closed_at=ts, risk_status="transferred")
+                after.append(lambda: _vuln_notify_closed(conn, user, _vuln_reload(conn, row), "transferred"))
+            elif decision == "avoid":
+                values["status"] = "avoidance"
+                after.append(lambda: _vuln_notify([assignee], f"[Эмзэг байдал] {_vuln_ref(row)} систем зогсоох", [
+                    "Эрсдэлээс зайлсхийх шийдвэр гарлаа: системийг зогсоох / үйлчилгээг зогсоож, баталгаажуулна уу.", ""]
+                    + _vuln_record_lines(row) + ["", dnote], row["id"]))
+            else:  # accept → CTO approval
+                values.update(status="pending_cto", risk_accept_reason=dnote, risk_accept_until=until,
+                              risk_accept_requested_by=user["id"], risk_accept_approver_id=None)
+                ctos = _vuln_role_users(conn, "cto")
+                after.append(lambda: _vuln_notify(ctos, f"[Эмзэг байдал] {_vuln_ref(row)} эрсдэл хүлээн зөвшөөрөх хүсэлт", [
+                    f"{_vuln_user_label(user)} эрсдэлийг {until} хүртэл хүлээн зөвшөөрөх зөвшөөрөл хүсч байна.", ""]
+                    + _vuln_record_lines(row) + ["", summary], row["id"]))
+            _vuln_apply(conn, user, row, values, summary, event, audit_label=f"Эрсдэлийн шийдвэр: {VULN_DECISION_LABELS[decision]}")
+            msg = {"mitigate": "Засварын шатанд шилжлээ.", "transfer": "Эрсдэлийг шилжүүлж, бүртгэл хаагдлаа.",
+                   "avoid": "Инженерт систем зогсоох даалгавар өглөө.", "accept": "CTO-ийн зөвшөөрөлд илгээлээ."}[decision]
+
+    elif action == "cto_approve":
+        until = _vf(form, "risk_accept_until", 10) or row["risk_accept_until"]
+        if not _valid_iso_date(until) or until <= today:
+            return _vuln_fail({"risk_accept_until": "Ирээдүйн огноо байх ёстой."})
+        _vuln_apply(conn, user, row, {"status": "accepted", "risk_accept_approver_id": user["id"], "risk_accept_until": until,
+                                      "risk_status": "accepted"},
+                    f"CTO зөвшөөрөв: {until} хүртэл." + (f"\n{note}" if note else ""), event, audit_label=label)
+        req = _vuln_user_by_id(conn, row["risk_accept_requested_by"])
+        after.append(lambda: _vuln_notify([req], f"[Эмзэг байдал] {_vuln_ref(row)} эрсдэлийг CTO зөвшөөрлөө", [
+            f"{_vuln_user_label(user)} эрсдэлийг {until} хүртэл хүлээн зөвшөөрлөө. Хугацаа дуусахад дахин үнэлгээнд автоматаар буцна.", ""]
+            + _vuln_record_lines(row) + ([note] if note else []), row["id"]))
+        msg = "Эрсдэлийг хүлээн зөвшөөрлөө."
+
+    elif action == "cto_reject":
+        if not note:
+            return _vuln_fail({"note": "Татгалзсан шалтгааныг бичнэ үү."})
+        _vuln_apply(conn, user, row, {"status": "risk_assessment", "ra_decision": "", "ra_due": vuln_ra_due(row["severity"])},
+                    note, event, audit_label=label)
+        req = _vuln_user_by_id(conn, row["risk_accept_requested_by"])
+        after.append(lambda: _vuln_notify([req] + list(_vuln_role_users(conn, "infosec")),
+                                          f"[Эмзэг байдал] {_vuln_ref(row)} эрсдэл хүлээн зөвшөөрөхөөс татгалзлаа", [
+            f"{_vuln_user_label(user)} эрсдэл хүлээн зөвшөөрөх хүсэлтийг татгалзлаа. Эрсдэлийг дахин үнэлнэ үү.", ""]
+            + _vuln_record_lines(row) + ["", "Шалтгаан:", note], row["id"]))
+        msg = "Татгалзаж, эрсдэлийн үнэлгээнд буцаалаа."
+
+    elif action == "avoid_confirm":
+        text = _vf(form, "avoid_note", 5000)
+        if not text:
+            return _vuln_fail({"avoid_note": "Зогсоосон систем / үйлчилгээ, хийсэн ажлыг бичнэ үү."})
+        _vuln_apply(conn, user, row, {"avoid_note": text, "avoid_confirmed_at": ts}, text, event, audit_label=label)
+        infosec = _vuln_role_users(conn, "infosec")
+        after.append(lambda: _vuln_notify(infosec, f"[Эмзэг байдал] {_vuln_ref(row)} систем зогсоосон — хянах", [
+            f"{_vuln_user_label(user)} системийг зогсоосноо баталгаажууллаа. Хянаж, бүртгэлийг хаана уу.", ""]
+            + _vuln_record_lines(row) + ["", text], row["id"]))
+        msg = "Баталгаажуулж, InfoSec-д мэдэгдлээ."
+
+    elif action == "avoid_close":
+        comment = _vf(form, "closure_comment", 10000)
+        if not comment:
+            return _vuln_fail({"closure_comment": "Хаалтын тайлбар бичнэ үү."})
+        _vuln_apply(conn, user, row, {"status": "closed", "closure_comment": comment, "closed_at": ts, "risk_status": "avoided",
+                                      "residual_risk": _vf(form, "residual_risk", 5000)}, comment, event, audit_label=label)
+        after.append(lambda: _vuln_notify_closed(conn, user, _vuln_reload(conn, row), "closed"))
+        msg = "Бүртгэл хаагдлаа."
+
+    elif action in ("save_remediation", "submit_fix", "submit_temp"):
+        values, errors = {}, {}
+        for f in ("rm_plan", "rm_actions", "rm_change_ref"):
+            values[f] = _vf(form, f, 300 if f == "rm_change_ref" else 10000) if f in form else (row[f] or "")
+        values["rm_target_date"] = _vf(form, "rm_target_date", 10) if "rm_target_date" in form else (row["rm_target_date"] or "")
+        if values["rm_target_date"] and not _valid_iso_date(values["rm_target_date"]):
+            errors["rm_target_date"] = "Огноо буруу."
+        if action == "submit_fix":
+            for f in ("rm_plan", "rm_actions", "rm_target_date", "rm_change_ref"):
+                if not values[f] and f not in errors:
+                    errors[f] = "Заавал бөглөнө."
+            rem = _vf(form, "remediated_date", 10) or today
+            if not _valid_iso_date(rem) or rem > today:
+                errors["remediated_date"] = "Зассан огноо буруу."
+            values.update(remediated_date=rem, rm_fix_type="fixed", status="verification")
+        if action == "submit_temp":
+            values["tm_controls"] = _vf(form, "tm_controls", 10000)
+            values["tm_until"] = _vf(form, "tm_until", 10)
+            if not values["tm_controls"]:
+                errors["tm_controls"] = "Нөхөх хяналтыг тайлбарлана уу."
+            if not _valid_iso_date(values["tm_until"]):
+                errors["tm_until"] = "Хүчинтэй хугацааг оруулна уу."
+            elif values["tm_until"] <= today:
+                errors["tm_until"] = "Ирээдүйн огноо байх ёстой."
+            values.update(rm_fix_type="temp", status="verification")
+        if errors:
+            return _vuln_fail(errors)
+        if action == "save_remediation":
+            _vuln_apply(conn, user, row, values, audit_label="Засварын төлөвлөгөө хадгалав")
+            msg = "Засварын төлөвлөгөө хадгалагдлаа."
+        else:
+            _vuln_apply(conn, user, row, values, note, event, audit_label=label)
+            infosec = _vuln_role_users(conn, "infosec")
+            kind = "засвар хийснээ" if action == "submit_fix" else "түр хамгаалалт хэрэгжүүлснээ"
+            after.append(lambda: _vuln_notify(infosec, f"[Эмзэг байдал] {_vuln_ref(row)} баталгаажуулах", [
+                f"{_vuln_user_label(user)} {kind} мэдэгдлээ. Дахин скан хийх, хувилбар шалгах замаар баталгаажуулна уу.", ""]
+                + _vuln_record_lines(row), row["id"]))
+            msg = "Баталгаажуулалтад илгээлээ."
+
+    elif action == "cannot_remediate":
+        if not note:
+            return _vuln_fail({"note": "Засварлах боломжгүй шалтгааныг бичнэ үү."})
+        _vuln_apply(conn, user, row, {"status": "risk_assessment", "ra_decision": "", "ra_due": vuln_ra_due(row["severity"])},
+                    note, event, audit_label=label)
+        infosec = _vuln_role_users(conn, "infosec")
+        after.append(lambda: _vuln_notify(infosec, f"[Эмзэг байдал] {_vuln_ref(row)} засварлах боломжгүй — дахин үнэлэх", [
+            f"{_vuln_user_label(user)} засварлах боломжгүй гэж мэдэгдлээ. Эрсдэлийг дахин үнэлнэ үү.", ""]
+            + _vuln_record_lines(row) + ["", "Шалтгаан:", note], row["id"]))
+        msg = "Эрсдэлийн үнэлгээнд буцаалаа."
+
+    elif action == "verify_fail":
+        vf = _vf(form, "vf_note", 10000)
+        if not vf:
+            return _vuln_fail({"vf_note": "Юу засагдаагүйг тайлбарлана уу."})
+        _vuln_apply(conn, user, row, {"status": "remediation", "vf_note": vf, "rm_fix_type": ""}, vf, event, audit_label=label)
+        assignee = _vuln_user_by_id(conn, row["assignee_id"])
+        after.append(lambda: _vuln_notify([assignee], f"[Эмзэг байдал] {_vuln_ref(row)} засагдаагүй байна", [
+            f"{_vuln_user_label(user)} баталгаажуулалтаар эмзэг байдал засагдаагүй гэж буцаалаа.", ""]
+            + _vuln_record_lines(row) + ["", "Тайлбар:", vf], row["id"]))
+        msg = "Засварын шат руу буцаалаа."
+
+    elif action == "verify_temp":
+        if not row["tm_until"] or row["tm_until"] <= today:
+            return 409, {"error": "Түр хамгаалалтын хүчинтэй хугацаа дууссан байна. «Засагдаагүй — буцаах»-ыг ашиглана уу."}
+        vf = _vf(form, "vf_note", 10000)
+        _vuln_apply(conn, user, row, {"status": "temp_mitigation", "vf_note": vf or row["vf_note"]}, vf, event, audit_label=label)
+        msg = f"Түр хамгаалалт {row['tm_until']} хүртэл хүчинтэй. Хугацаа дуусахад засвар руу автоматаар буцна."
+
+    elif action == "close":
+        errors = {}
+        vf = _vf(form, "vf_note", 10000)
+        comment = _vf(form, "closure_comment", 10000)
+        residual = _vf(form, "residual_risk", 5000)
+        rstatus = _vf(form, "risk_status", 20)
+        if not vf:
+            errors["vf_note"] = "Дахин скан / хувилбарын шалгалтын үр дүнг бичнэ үү."
+        if not comment:
+            errors["closure_comment"] = "Хаалтын тайлбар бичнэ үү."
+        if not residual:
+            errors["residual_risk"] = "Үлдэгдэл эрсдэлийг бичнэ үү (байхгүй бол «Байхгүй»)."
+        if rstatus not in ("mitigated", "residual"):
+            errors["risk_status"] = "Эрсдэлийн төлөвийг сонгоно уу."
+        if errors:
+            return _vuln_fail(errors)
+        _vuln_apply(conn, user, row, {"status": "closed", "vf_note": vf, "closure_comment": comment, "residual_risk": residual,
+                                      "risk_status": rstatus, "closed_at": ts}, comment, event, audit_label=label)
+        after.append(lambda: _vuln_notify_closed(conn, user, _vuln_reload(conn, row), "closed"))
+        msg = "Баталгаажуулж, бүртгэлийг хаалаа. IT-ийн дарга, CTO-д мэдэгдлээ."
+
+    elif action == "temp_resume":
+        if not note:
+            return _vuln_fail({"note": "Шалтгааныг бичнэ үү (жишээ: patch гарсан)."})
+        _vuln_apply(conn, user, row, {"status": "remediation", "rm_fix_type": ""}, note, audit_label=label)
+        msg = "Засварын шат руу шилжлээ."
+    else:
+        return 400, {"error": "Үйлдэл буруу байна."}
+
+    conn.commit()
+    for fn in after:
+        try:
+            fn()
+        except Exception:  # a failed e-mail must never undo a committed workflow step
+            traceback.print_exc()
+    body = {"id": row["id"], "message": msg}
+    if action == "submit_assessment":
+        body["submittedAt"] = ts  # inspection date, shown in the engineer's confirmation
+    return 200, body
+
+
+_vuln_last_sweep = [0.0]
+
+
+def vuln_expire_sweep(conn, force=False):
+    """Accepted risk past its period → back to Risk Assessment; expired temporary mitigation → back to Remediation."""
+    if not force and time.time() - _vuln_last_sweep[0] < 60:
+        return
+    _vuln_last_sweep[0] = time.time()
+    today = _vuln_today()
+    rows = conn.execute(
+        f"""{_VULN_SELECT_SQL} WHERE v.deleted_at = '' AND (
+              (v.status = 'accepted' AND v.risk_accept_until <> '' AND v.risk_accept_until < ?)
+              OR (v.status = 'temp_mitigation' AND v.tm_until <> '' AND v.tm_until < ?))""", (today, today)).fetchall()
+    after = []
+    for r in rows:
+        if r["status"] == "accepted":
+            _vuln_apply(conn, None, r, {"status": "risk_assessment", "ra_decision": "", "risk_status": "",
+                                        "ra_due": vuln_ra_due(r["severity"])},
+                        f"Эрсдэл хүлээн зөвшөөрсөн хугацаа ({r['risk_accept_until']}) дууссан тул дахин үнэлнэ.", "accept_expired",
+                        audit_label="Эрсдэл хүлээн зөвшөөрсөн хугацаа дууссан")
+            users = list(_vuln_role_users(conn, "infosec"))
+            after.append((users, r, "эрсдэл хүлээн зөвшөөрсөн хугацаа дууссан — дахин үнэлэх"))
+        else:
+            _vuln_apply(conn, None, r, {"status": "remediation", "rm_fix_type": ""},
+                        f"Түр хамгаалалтын хугацаа ({r['tm_until']}) дууссан тул засвар руу буцлаа.", "temp_expired",
+                        audit_label="Түр хамгаалалтын хугацаа дууссан")
+            users = [_vuln_user_by_id(conn, r["assignee_id"])] + list(_vuln_role_users(conn, "infosec"))
+            after.append((users, r, "түр хамгаалалтын хугацаа дууссан — засвар хийх"))
+    if rows:
+        conn.commit()
+    for users, r, what in after:
+        _vuln_notify(users, f"[Эмзэг байдал] {_vuln_ref(r)} {what}", _vuln_record_lines(r), r["id"])
+
+
+def _vuln_can_upload(user, row):
+    return vuln_can_manage(user) or _vuln_is_assignee(user, row) or vuln_can_assign(user) or vuln_is_cto(user)
+
+
+def _vuln_can_delete_file(user, row, file_row):
+    if vuln_can_manage(user):
+        return True
+    return _vuln_is_assignee(user, row) and file_row["uploaded_by"] == user["id"]
+
+
+def vuln_api_detail(conn, user, row):
+    today = now_utc().date()
+    soon_days = vuln_soon_days(conn)
+    item = _vuln_list_item(row, today, soon_days)
+    item.update({
+        "source": row["source"], "sourceUrl": row["source_url"],
+        "published": row["published_date"], "reported": row["reported_date"],
+        "description": row["description"], "scope": row["scope"], "verification": row["verification_method"],
+        "recommendation": row["recommendation"], "threatTrend": row["threat_trend"],
+        "impact": row["impact"], "riskJustification": row["risk_justification"],
+        "remediationNotes": row["remediation_notes"], "remediatedDate": row["remediated_date"],
+        "remediationDays": row["remediation_days"], "closedAt": row["closed_at"],
+        "custom": vuln_custom_values(row),
+        "ownerCustodian": row["owner_custodian"], "inUse": row["in_use"], "affectedAsset": row["affected_asset"],
+        "envPresent": row["env_present"], "compromiseSigns": row["compromise_signs"],
+        "impactDecision": {"affected": row["as_affected"], "note": row["ia_note"], "decidedAt": row["ia_decided_at"],
+                   "decidedBy": _vuln_user_label(_vuln_user_by_id(conn, row["ia_decided_by"])) if row["ia_decided_by"] else ""},
+        "riskAccept": {
+            "reason": row["risk_accept_reason"], "until": row["risk_accept_until"],
+            "approver": row["risk_approver_name"] or "", "approverId": row["risk_accept_approver_id"],
+        } if row["risk_accept_reason"] else None,
+        "createdBy": row["created_by_name"] or "", "createdAt": row["created_at"], "updatedAt": row["updated_at"],
+        "assetInfo": {
+            "id": row["asset_id"], "name": row["asset_name"] or "", "type": row["asset_type"] or "",
+            "owner": row["asset_owner"] or "", "custodian": row["asset_custodian"] or "",
+            "location": row["asset_location"] or "", "category": row["asset_category"] or "",
+            "dept": row["asset_department_name"] or "",
+        } if row["asset_id"] else ({"id": None, "name": row["asset_name"], "type": "", "owner": "", "custodian": "",
+                                    "location": "", "category": "", "dept": ""} if row["asset_name"] else None),
+    })
+    files = conn.execute(
+        f"""SELECT f.*, {_uname_sql('u')} AS uploader FROM vulnerability_files f
+            LEFT JOIN users u ON u.id = f.uploaded_by
+            WHERE f.vulnerability_id = ? AND f.deleted_at = '' ORDER BY f.id DESC""", (row["id"],)).fetchall()
+    item["files"] = [{
+        "id": f["id"], "name": f["original_name"], "size": f["size"], "uploader": f["uploader"] or "",
+        "uploadedAt": f["uploaded_at"], "canDelete": _vuln_can_delete_file(user, row, f), "category": f["category"],
+    } for f in files]
+    custom_labels = vuln_custom_labels(conn)
+    item["activity"] = [{
+        "id": a["id"], "actor": a["actor_name"], "action": a["action"], "field": a["field"],
+        "fieldLabel": VULN_FIELD_LABELS.get(a["field"]) or custom_labels.get(a["field"])
+                      or ("Нэмэлт талбар (устгасан)" if (a["field"] or "").startswith("cf_") else a["field"]),
+        "old": a["old_value"], "new": a["new_value"], "note": a["note"], "at": a["created_at"],
+    } for a in conn.execute(
+        "SELECT * FROM vulnerability_activity WHERE vulnerability_id = ? ORDER BY id DESC", (row["id"],))]
+    try:
+        impacts = json.loads(row["ra_impacts"]) if row["ra_impacts"] else []
+    except ValueError:
+        impacts = []
+    item.update({
+        "groupId": row["group_id"],
+        "assessment": {k: row[k] for k in _VULN_ASSESS_TEXT + tuple(_VULN_ASSESS_CHOICE)} | {"submittedAt": row["as_submitted_at"]},
+        "risk": {
+            "threat": row["ra_threat"], "impacts": impacts, "impact": row["ra_impact"], "likelihood": row["ra_likelihood"],
+            "score": row["ra_score"], "level": row["ra_level"], "due": row["ra_due"], "decision": row["ra_decision"],
+            "decisionNote": row["ra_decision_note"], "assessedAt": row["ra_assessed_at"],
+            "assessedBy": _vuln_user_label(_vuln_user_by_id(conn, row["ra_assessed_by"])),
+            "dueKind": ("overdue" if row["ra_due"] and row["ra_due"] < today.isoformat() else "ontrack")
+            if (row["status"] or "") == "risk_assessment" and row["ra_due"] else "",
+        },
+        "remediation": {
+            "plan": row["rm_plan"], "actions": row["rm_actions"], "targetDate": row["rm_target_date"], "changeRef": row["rm_change_ref"],
+            "fixType": row["rm_fix_type"], "tmControls": row["tm_controls"], "tmUntil": row["tm_until"],
+            "avoidNote": row["avoid_note"], "avoidConfirmedAt": row["avoid_confirmed_at"],
+        },
+        "closure": {"vfNote": row["vf_note"], "comment": row["closure_comment"], "residual": row["residual_risk"],
+                    "riskStatus": row["risk_status"], "riskStatusLabel": VULN_RISK_STATUS_LABELS.get(row["risk_status"] or "", "")},
+        "riskConfig": vuln_risk_config(conn),
+    })
+    if item["riskAccept"] is not None:
+        item["riskAccept"]["requestedBy"] = _vuln_user_label(_vuln_user_by_id(conn, row["risk_accept_requested_by"]))
+    elif row["risk_accept_until"]:
+        item["riskAccept"] = {"reason": "", "until": row["risk_accept_until"], "approver": row["risk_approver_name"] or "",
+                              "approverId": row["risk_accept_approver_id"], "requestedBy": ""}
+    scope_sql, scope_args = _vuln_scope(user)
+    item["group"] = [{
+        "id": g["id"], "ref": _vuln_ref(g), "asset": g["asset_name"] or "", "status": g["status"],
+        "assignee": g["assignee_name"] or "",
+    } for g in conn.execute(f"{_VULN_SELECT_SQL} WHERE v.group_id = ? AND v.id <> ? AND {scope_sql} ORDER BY v.id",
+                            [row["group_id"] or row["id"], row["id"]] + scope_args)]
+    item["perms"] = {
+        "edit": vuln_can_edit_record(user, row),
+        "upload": _vuln_can_upload(user, row),
+        "delete": vuln_can_delete(user),
+        "actions": vuln_available_actions(user, row),
+        "assign": vuln_can_assign_record(user, row) and (row["status"] or "new") in VULN_ASSIGNABLE_STATUSES,
+        "comment": True,
+        "isAssignee": _vuln_is_assignee(user, row),
+    }
+    item["actionLabels"] = {k: v[2] for k, v in VULN_ACTIONS.items()}
+    return item
+
+
+def _vuln_display(conn, field, value):
+    """Human-readable value for the activity log."""
+    if value is None or value == "":
+        return ""
+    if field == "asset_id":
+        r = conn.execute("SELECT asset_name FROM assets WHERE id = ?", (value,)).fetchone()
+        return f"{r['asset_name']} (#{value})" if r else f"#{value}"
+    if field == "department_id":
+        r = conn.execute("SELECT name FROM departments WHERE id = ?", (value,)).fetchone()
+        return r["name"] if r else f"#{value}"
+    if field in ("assignee_id",):
+        return _vuln_user_label(conn.execute("SELECT * FROM users WHERE id = ?", (value,)).fetchone()) or f"#{value}"
+    if field == "cvss_score":
+        return f"{float(value):.1f}"
+    if field == "severity":
+        return VULN_SEV_LABELS.get(str(value).lower(), value)
+    if field == "env_present":
+        return VULN_ENV_PRESENT_LABELS.get(value, value)
+    if field == "compromise_signs":
+        return VULN_COMPROMISE_LABELS.get(value, value)
+    if field in ("as_internet_facing", "as_patch_available", "as_affected", "as_exploited", "in_use"):
+        return VULN_YN_LABELS.get(value, value)
+    if field == "ra_decision":
+        return VULN_DECISION_LABELS.get(value, value)
+    if field == "ra_level":
+        return VULN_RISK_LEVEL_LABELS.get(value, value)
+    if field == "risk_status":
+        return VULN_RISK_STATUS_LABELS.get(value, value)
+    if field == "ra_impacts":
+        try:
+            return " · ".join(f"Н{i}={v if v is not None else '—'}" for i, v in enumerate(json.loads(value), 1))
+        except (ValueError, TypeError):
+            return str(value)
+    return str(value)
+
+
+def _vuln_same(a, b):
+    if a in (None, "") and b in (None, ""):
+        return True
+    if isinstance(a, float) or isinstance(b, float):
+        try:
+            return a is not None and b is not None and abs(float(a) - float(b)) < 1e-9
+        except (TypeError, ValueError):
+            return False
+    return a == b
+
+
+def vuln_api_create(conn, user, form):
+    """Step 1 (InfoSec): register a vulnerability with its CVSS and every potentially affected asset.
+
+    One finding is created per asset (same registration group) so the IT Head can assign an engineer to each.
+    """
+    if not vuln_can_manage(user):
+        return 403, {"error": "Эрх хүрэлцэхгүй байна."}
+    values, errors = _vuln_validate(conn, user, form)
+    custom, cerrors = _vuln_custom_parse(conn, "register", form, None, True)
+    errors.update(cerrors)
+    values["vuln_custom"] = json.dumps(custom, ensure_ascii=False)
+    if values["cvss_score"] is None and "cvss_score" not in errors:
+        errors["cvss_score"] = "CVSS оноо заавал оруулна (түвшин, SLA үүнээс тооцоологдоно)."
+    extra_ids = []
+    for tok in (form.get("extra_asset_ids") or "").split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if not tok.isdigit() or not conn.execute("SELECT 1 FROM assets WHERE id = ?", (int(tok),)).fetchone():
+            errors["extra_asset_ids"] = "Нэмэлт хөрөнгийн жагсаалтад олдохгүй хөрөнгө байна."
+            break
+        if int(tok) != values["asset_id"] and int(tok) not in extra_ids:
+            extra_ids.append(int(tok))
+    if len(extra_ids) > 50:
+        errors["extra_asset_ids"] = "Нэг удаад 50-аас ихгүй хөрөнгө."
+    if errors:
+        return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+    vuln_id = _vuln_insert(conn, user, values)
+    ids = [vuln_id]
+    for aid in extra_ids:
+        a = conn.execute("SELECT id, department_id, owner, custodian FROM assets WHERE id = ?", (aid,)).fetchone()
+        o, c = (a["owner"] or "").strip(), (a["custodian"] or "").strip()
+        ids.append(_vuln_insert(conn, user, dict(values, asset_id=aid, department_id=a["department_id"],
+                                                 owner_custodian=f"{o} / {c}" if o and c and o != c else (o or c)),
+                                group_id=vuln_id))
+    conn.commit()
+    _vuln_notify_it_heads(conn, user, vuln_id, ids=ids)
+    n = f" ({len(ids)} хөрөнгө)" if len(ids) > 1 else ""
+    return 200, {"id": vuln_id, "ids": ids, "message": f"Эмзэг байдал бүртгэгдэж{n}, IT-ийн даргад мэдэгдэл илгээлээ."}
+
+
+def vuln_api_update(conn, user, row, form):
+    is_manager = vuln_can_edit_record(user, row)  # registration details: only the InfoSec user who created it
+    if not (is_manager or _vuln_is_assignee(user, row)):
+        return 403, {"error": "Эрх хүрэлцэхгүй байна."}
+    changes = {}
+    if is_manager and form.get("scope_of_edit") != "remediation":
+        values, errors = _vuln_validate(conn, user, form, existing=row)
+        custom, cerrors = _vuln_custom_parse(conn, "register", form, row, True)
+        errors.update(cerrors)
+        if errors:
+            return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+        for field in _VULN_MANAGER_FIELDS:
+            if not _vuln_same(row[field], values[field]):
+                changes[field] = values[field]
+        if custom != vuln_custom_values(row):
+            changes["vuln_custom"] = json.dumps(custom, ensure_ascii=False)
+        if not _vuln_same(row["remediation_days"], values["remediation_days"]):
+            changes["remediation_days"] = values["remediation_days"]
+    # Remediation information: editable by managers and by the assignee.
+    errors = {}
+    notes = (form.get("remediation_notes") or "").strip()
+    rem_date = (form.get("remediated_date") or "").strip()
+    if "remediation_notes" in form:
+        if len(notes) > _VULN_EXTRA_TEXT_LIMITS["remediation_notes"]:
+            errors["remediation_notes"] = "Хэт урт байна."
+        elif notes != (row["remediation_notes"] or ""):
+            changes["remediation_notes"] = notes
+    if "remediated_date" in form:
+        if rem_date and not _valid_iso_date(rem_date):
+            errors["remediated_date"] = "Огноо буруу форматтай байна."
+        elif rem_date and rem_date > now_utc().date().isoformat():
+            errors["remediated_date"] = "Ирээдүйн огноо байж болохгүй."
+        elif rem_date != (row["remediated_date"] or ""):
+            changes["remediated_date"] = rem_date
+    if errors:
+        return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+    if not changes:
+        return 200, {"id": row["id"], "message": "Өөрчлөлт алга."}
+
+    status = row["status"] or "new"
+    new_status = status
+    if "assignee_id" in changes:
+        if changes["assignee_id"] and status == "new":
+            new_status = "assigned"
+        elif not changes["assignee_id"] and status == "assigned":
+            new_status = "new"
+    ts = now_utc().isoformat()
+    cols = dict(changes, updated_at=ts, updated_by=user["id"])
+    if new_status != status:
+        cols["status"] = new_status
+    conn.execute(
+        "UPDATE vulnerabilities SET " + ", ".join(f"{c} = ?" for c in cols) + " WHERE id = ?",
+        list(cols.values()) + [row["id"]],
+    )
+    for field, new in changes.items():
+        if field == "remediation_days":
+            continue
+        if field == "vuln_custom":
+            _vuln_custom_log(conn, row, user, vuln_custom_values(row), json.loads(new))
+            continue
+        _vuln_log(conn, row["id"], user, "updated", field,
+                  _vuln_display(conn, field, row[field]), _vuln_display(conn, field, new))
+    if new_status != status:
+        _vuln_log(conn, row["id"], user, "status_changed", "status", status, new_status,
+                  "Хариуцагч өөрчлөгдсөнтэй холбоотой автоматаар.")
+    labels = ", ".join(("Нэмэлт талбар" if f == "vuln_custom" else VULN_FIELD_LABELS.get(f, f))
+                       for f in changes if f != "remediation_days")
+    record_audit(conn, user["id"], "update", "vulnerability", entity_id=row["id"],
+                 department_id=row["department_id"], details=f"{_vuln_ref(row)} засварлав: {labels}")
+    conn.commit()
+    return 200, {"id": row["id"], "message": "Өөрчлөлт хадгалагдлаа."}
+
+
+def vuln_api_assign(conn, user, row, form):
+    """IT Head assigns the responsible engineer for the vulnerability's asset; New/Reopened become Assigned."""
+    current = row["status"] or "new"
+    if not vuln_can_assign_record(user, row):
+        return 403, {"error": "Хариуцагч томилох эрх зөвхөн IT-ийн даргад байна."}
+    if current not in VULN_ASSIGNABLE_STATUSES:
+        return 409, {"error": f"«{VULN_STATUS_LABELS[current]}» төлөвтэй бүртгэлд хариуцагч томилох боломжгүй."}
+    raw = (form.get("assignee_id") or "").strip()
+    note = (form.get("note") or "").strip()[:5000]
+    engineer = conn.execute("SELECT * FROM users WHERE id = ? AND is_active = 1 AND " + _VULN_HAS_ROLE_SQL.format(col="vuln_role").replace("?", "'engineer'"),
+                            (int(raw),)).fetchone() if raw.isdigit() else None
+    if not engineer:
+        return 422, {"error": "Талбаруудыг шалгана уу.",
+                     "fields": {"assignee_id": "Инженер эрхтэй ажилтныг сонгоно уу (Тохиргоо → Эрх олгох)."}}
+    if engineer["id"] == row["assignee_id"]:
+        return 200, {"id": row["id"], "message": "Өөрчлөлт алга."}
+    new_status = "assigned" if current == "new" else current
+    ts = now_utc().isoformat()
+    conn.execute("UPDATE vulnerabilities SET assignee_id = ?, status = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+                 (engineer["id"], new_status, ts, user["id"], row["id"]))
+    name = _vuln_user_label(engineer)
+    _vuln_log(conn, row["id"], user, "updated", "assignee_id", row["assignee_name"] or "", name, note)
+    if new_status != current:
+        _vuln_log(conn, row["id"], user, "status_changed", "status", current, new_status)
+    record_audit(conn, user["id"], "update", "vulnerability", entity_id=row["id"], department_id=row["department_id"],
+                 details=f"{_vuln_ref(row)} хариуцагч томилов: {name}")
+    conn.commit()
+    lines = [f"{_vuln_user_label(user)} таныг дараах эмзэг байдлыг засварлах хариуцагчаар томиллоо.", "",
+             f"{_vuln_ref(row)} — {row['title']}",
+             f"Түвшин: {VULN_SEV_LABELS.get((row['severity'] or '').lower(), row['severity'])}",
+             f"Мэдээллийн хөрөнгө / Систем: {row['asset_name'] or '—'}",
+             f"Засварлах хугацаа: {row['due_date'] or '—'}"]
+    if note:
+        lines += ["", "Тайлбар:", note]
+    _vuln_notify([engineer], f"[Эмзэг байдал] {_vuln_ref(row)} танд оноогдлоо", lines, row["id"])
+    return 200, {"id": row["id"], "message": f"{name} хариуцагчаар томилогдож, мэдэгдэл илгээлээ."}
+
+
+def vuln_api_comment(conn, user, row, form):
+    """Review comment (append-only, in the activity log). Anyone who can see the record may comment."""
+    text = (form.get("comment") or "").strip()
+    if not text:
+        return 422, {"error": "Сэтгэгдэл бичнэ үү.", "fields": {"comment": "Сэтгэгдэл бичнэ үү."}}
+    if len(text) > 5000:
+        return 422, {"error": "Хэт урт байна.", "fields": {"comment": "Хамгийн ихдээ 5000 тэмдэгт."}}
+    _vuln_log(conn, row["id"], user, "commented", "", "", "", text)
+    conn.execute("UPDATE vulnerabilities SET updated_at = ? WHERE id = ?", (now_utc().isoformat(), row["id"]))
+    conn.commit()
+    return 200, {"id": row["id"], "message": "Сэтгэгдэл нэмэгдлээ."}
+
+
+def vuln_api_delete(conn, user, row, form):
+    """Soft delete (row and its history stay in the database for recovery and audit)."""
+    if not vuln_can_delete(user):
+        return 403, {"error": "Эрх хүрэлцэхгүй байна."}
+    reason = (form.get("reason") or "").strip()[:2000]
+    ts = now_utc().isoformat()
+    conn.execute("UPDATE vulnerabilities SET deleted_at = ?, deleted_by = ?, updated_at = ?, updated_by = ? WHERE id = ?",
+                 (ts, user["id"], ts, user["id"], row["id"]))
+    _vuln_log(conn, row["id"], user, "deleted", "", "", "", reason)
+    record_audit(conn, user["id"], "delete", "vulnerability", entity_id=row["id"], department_id=row["department_id"],
+                 details=f"{_vuln_ref(row)} — {row['title']} устгав (сэргээх боломжтой).{(' Шалтгаан: ' + reason) if reason else ''}")
+    conn.commit()
+    return 200, {"id": row["id"], "message": "Бүртгэл устгагдлаа."}
+
+
+def _vuln_fs_items(form):
+    if "files" not in form:
+        return []
+    items = form["files"]
+    if not isinstance(items, list):
+        items = [items]
+    return [it for it in items if getattr(it, "filename", "")]
+
+
+def vuln_api_upload(conn, user, row, form):
+    if not _vuln_can_upload(user, row):
+        return 403, {"error": "Эрх хүрэлцэхгүй байна."}
+    items = _vuln_fs_items(form)
+    if not items:
+        return 422, {"error": "Файл сонгоно уу."}
+    if len(items) > VULN_FILE_MAX_PER_UPLOAD:
+        return 422, {"error": f"Нэг удаад {VULN_FILE_MAX_PER_UPLOAD}-аас ихгүй файл."}
+    category = (form.getfirst("category", "") or "").strip() if hasattr(form, "getfirst") else ""
+    if category not in VULN_FILE_CATEGORIES:
+        return 422, {"error": "Файлын ангилал буруу."}
+    for it in items:
+        name = Path(str(it.filename).replace("\\", "/")).name
+        if Path(name).suffix.lower() not in VULN_FILE_SUFFIXES:
+            return 422, {"error": f"«{name}» — зөвшөөрөгдөөгүй файлын төрөл."}
+        if category == "as_evidence" and Path(name).suffix.lower() not in VULN_EVIDENCE_SUFFIXES:
+            return 422, {"error": f"«{name}» — нотолгоонд зураг, Excel, Word, PDF, TXT файл хавсаргана."}
+        if _upload_too_large(it, VULN_FILE_MAX_BYTES):
+            return 422, {"error": f"«{name}» — 20 МБ-аас их байна."}
+    VULN_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    ts = now_utc().isoformat()
+    saved = []
+    for it in items:
+        name = Path(str(it.filename).replace("\\", "/")).name[:255]
+        stored = uuid.uuid4().hex + Path(name).suffix.lower()
+        data = it.file.read()
+        (VULN_FILES_DIR / stored).write_bytes(data)
+        conn.execute(
+            "INSERT INTO vulnerability_files(vulnerability_id, original_name, stored_name, size, uploaded_by, uploaded_at, category) VALUES (?,?,?,?,?,?,?)",
+            (row["id"], name, stored, len(data), user["id"], ts, category))
+        _vuln_log(conn, row["id"], user, "file_added", "file", "", name)
+        saved.append(name)
+    conn.execute("UPDATE vulnerabilities SET updated_at = ?, updated_by = ? WHERE id = ?", (ts, user["id"], row["id"]))
+    record_audit(conn, user["id"], "upload", "vulnerability", entity_id=row["id"], department_id=row["department_id"],
+                 details=f"{_vuln_ref(row)} нотлох баримт нэмэв: {', '.join(saved)}")
+    conn.commit()
+    return 200, {"message": f"{len(saved)} файл хавсаргалаа."}
+
+
+def vuln_file_row(conn, row, file_id):
+    return conn.execute("SELECT * FROM vulnerability_files WHERE id = ? AND vulnerability_id = ? AND deleted_at = ''",
+                        (file_id, row["id"])).fetchone()
+
+
+def vuln_api_file_delete(conn, user, row, file_row):
+    if not _vuln_can_delete_file(user, row, file_row):
+        return 403, {"error": "Эрх хүрэлцэхгүй байна."}
+    ts = now_utc().isoformat()
+    # Soft delete: the stored file is kept on disk so it can be recovered.
+    conn.execute("UPDATE vulnerability_files SET deleted_at = ?, deleted_by = ? WHERE id = ?", (ts, user["id"], file_row["id"]))
+    _vuln_log(conn, row["id"], user, "file_deleted", "file", file_row["original_name"], "")
+    record_audit(conn, user["id"], "delete", "vulnerability", entity_id=row["id"], department_id=row["department_id"],
+                 details=f"{_vuln_ref(row)} нотлох баримт устгав: {file_row['original_name']}")
+    conn.commit()
+    return 200, {"message": "Файл устгагдлаа."}
+
+
+_VULN_DEADLINE_LABELS = {"overdue": "Хугацаа хэтэрсэн", "soon": "Хугацаа дөхсөн", "ontrack": "Хугацаандаа",
+                         "none": "Хугацаагүй", "done": "Шийдвэрлэсэн"}
+
+
+def vuln_export(conn, user, query, fmt):
+    today = now_utc().date()
+    soon_days = vuln_soon_days(conn)
+    scope_sql, scope_args = _vuln_scope(user)
+    where, args = _vuln_filters(query, user, today, soon_days)
+    rows = conn.execute(
+        f"{_VULN_SELECT_SQL} WHERE {' AND '.join([scope_sql] + where)} ORDER BY {_vuln_order_sql(query)} LIMIT 100000",
+        scope_args + args).fetchall()
+    header = ["ID", "Эмзэг байдлын нэр", "CVE", "CVSS", "Түвшин", "Төлөв", "Мэдээллийн хөрөнгө / Систем", "Хөрөнгийн ID", "Хэлтэс",
+              "Хөрөнгө эзэмшигч / Хариуцагч", "Ашиглагдаж байгаа эсэх",
+              "Манай орчинд энэ эмзэг байдал байгаа эсэх", "Халдлагад өртсөн шинж тэмдэг байгаа эсэх", "Хариуцагч", "Бүртгэсэн огноо", "Засварлах хугацаа", "Хугацааны төлөв", "Хоног",
+              "Илрүүлсэн эх сурвалж", "Бүртгэсэн", "Зассан огноо"]
+    matrix = [header]
+    for r in rows:
+        dl = _vuln_deadline(r["status"], r["due_date"], today, soon_days)
+        matrix.append([
+            _vuln_ref(r), r["title"], r["cve_id"], "" if r["cvss_score"] is None else f"{r['cvss_score']:.1f}",
+            VULN_SEV_LABELS.get((r["severity"] or "").lower(), r["severity"]),
+            VULN_STATUS_LABELS.get(r["status"], r["status"]), r["asset_name"] or "",
+            str(r["asset_id"] or ""), r["department_name"] or "", r["owner_custodian"] or "",
+            VULN_IN_USE_LABELS.get(r["in_use"] or "", r["in_use"] or ""),
+            VULN_ENV_PRESENT_LABELS.get(r["env_present"] or "", r["env_present"] or ""),
+            VULN_COMPROMISE_LABELS.get(r["compromise_signs"] or "", r["compromise_signs"] or ""), r["assignee_name"] or "",
+            (r["created_at"] or "")[:10], r["due_date"], _VULN_DEADLINE_LABELS[dl["kind"]],
+            "" if dl["days"] is None else str(dl["days"]), r["source"], r["created_by_name"] or "", r["remediated_date"],
+        ])
+    stamp = today.isoformat()
+    record_audit(conn, user["id"], "export", "vulnerability", department_id=user["department_id"],
+                 details=f"Эмзэг байдлын жагсаалт экспортлов ({fmt.upper()}, {len(rows)} мөр).")
+    conn.commit()
+    if fmt == "xlsx":
+        return build_xlsx_payload("Эмзэг байдал", matrix), \
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"vulnerabilities_{stamp}.xlsx"
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    for line in matrix:
+        # Neutralise spreadsheet formula injection in user-supplied text.
+        writer.writerow([("'" + c) if isinstance(c, str) and c[:1] in ("=", "+", "-", "@") else c for c in line])
+    return ("﻿" + buf.getvalue()).encode("utf-8"), "text/csv; charset=utf-8", f"vulnerabilities_{stamp}.csv"
+
+
+def vuln_json(start_response, status_code, payload):
+    status = {200: "200 OK", 403: "403 Forbidden", 404: "404 Not Found", 409: "409 Conflict",
+              422: "422 Unprocessable Entity", 400: "400 Bad Request"}.get(status_code, f"{status_code} Error")
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    start_response(status, [("Content-Type", "application/json; charset=utf-8"), ("Content-Length", str(len(body))),
+                            ("Cache-Control", "no-store")])
+    return [body]
+
+
+# ── VulnReg form designer: InfoSec-managed structure of the registration / engineer / risk forms ─────────
+# Schema = app_settings[vuln_forms] (JSON). Each form → ordered sections (cards) → ordered fields.
+# Built-in fields map to vulnerabilities columns and drive the workflow: they can be renamed, re-hinted, moved and
+# (unless core) hidden or made optional, but never deleted or retyped. Custom fields (key cf_*) are fully managed by
+# InfoSec; their values live in vulnerabilities.vuln_custom (JSON {key: value}) and survive field deletion.
+VULN_FORMS_SETTING = "vuln_forms"
+VULN_FORM_KEYS = ("register", "engineer", "risk")
+VULN_FORM_TITLES = {"register": "Эмзэг байдал бүртгэх", "engineer": "Хөрөнгө ба хариуцлага, үнэлгээ (Инженер)",
+                    "risk": "Эрсдэлийн үнэлгээ (MAS-14)"}
+VULN_CUSTOM_TYPES = {"text": "Текст", "textarea": "Урт текст", "number": "Тоо", "date": "Огноо",
+                     "select": "Сонголт (жагсаалт)", "yesno": "Тийм / Үгүй", "url": "Холбоос (URL)", "email": "И-мэйл"}
+_VULN_CF_KEY_RE = re.compile(r"^cf_[a-z0-9]{4,24}$")
+_VULN_SEC_ID_RE = re.compile(r"^[a-z0-9_]{1,40}$")
+_VULN_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+VULN_FORM_MAX_SECTIONS = 20
+VULN_FORM_MAX_FIELDS = 120
+VULN_FORM_MAX_OPTIONS = 50
+
+
+def _vb(key, label, typ, core=False, lock_req=False, req=False, full=True, block=False, hint="", ph=""):
+    """Built-in field definition. core: cannot be hidden; lock_req: always required; block: rendered by the system."""
+    return {"key": key, "label": label, "type": typ, "core": core, "lockReq": lock_req, "required": req or lock_req,
+            "full": full, "block": block, "hint": hint, "ph": ph}
+
+
+VULN_FORM_BUILTINS = {
+    "register": [
+        ("general", "Ерөнхий мэдээлэл", "", [
+            _vb("title", "Эмзэг байдлын нэр", "text", core=True, lock_req=True),
+            _vb("cve_id", "CVE", "text", full=False, ph="CVE-2026-12345", hint="Байхгүй бол хоосон үлдээнэ."),
+            _vb("source", "Илрүүлсэн эх сурвалж", "text", full=False, ph="NVD, дотоод скан, нэвтрэлтийн тест…"),
+            _vb("source_url", "Эх сурвалжийн холбоос", "url", ph="https://"),
+            _vb("published_date", "Нийтэлсэн огноо", "date", full=False),
+            _vb("reported_date", "Мэдээлсэн огноо", "date", full=False),
+            _vb("description", "Тайлбар", "textarea"),
+        ]),
+        ("risk", "Эрсдэлийн үнэлгээ", "", [
+            _vb("cvss_score", "CVSS оноо", "cvss", core=True, lock_req=True, block=True),
+            _vb("due_date", "Засварлах хугацаа", "date", full=False, hint="CVSS онооноос автоматаар тооцоолно; гараар өөрчилж болно."),
+            _vb("impact", "Нөлөөлөл", "textarea", ph="Ашиглагдвал бизнес, систем, мэдээлэлд үзүүлэх нөлөө"),
+            _vb("risk_justification", "Эрсдэлийн үндэслэл", "textarea"),
+            _vb("threat_trend", "Аюулын чиг хандлага", "textarea", ph="Идэвхтэй ашиглагдаж байгаа эсэх, exploit нийтлэгдсэн эсэх"),
+        ]),
+        ("remed", "Засварлах зөвлөмж", "", [
+            _vb("scope", "Хамрах хүрээ", "textarea", ph="Нөлөөлөх систем, хувилбар"),
+            _vb("verification_method", "Нөлөөллийг шалгах арга", "textarea"),
+            _vb("recommendation", "Засварлах зөвлөмж (Patch / Mitigation)", "textarea"),
+        ]),
+    ],
+    "engineer": [
+        ("asset_resp", "2. Хөрөнгө ба хариуцлага", "", [
+            _vb("affected_asset", "Нөлөөлж болзошгүй хөрөнгө / Систем", "text", core=True, lock_req=True, ph="Хөрөнгө эсвэл системийн нэр"),
+            _vb("owner_custodian", "Хөрөнгө эзэмшигч / Хариуцагч", "text", req=True, full=False),
+            _vb("in_use", "Ашиглагдаж байгаа эсэх", "select", full=False),
+            _vb("env_present", "Манай орчинд энэ эмзэг байдал байгаа эсэх", "select", full=False),
+            _vb("compromise_signs", "Халдлагад өртсөн шинж тэмдэг байгаа эсэх", "select", full=False),
+        ]),
+        ("assess", "Үнэлгээ", "Хөрөнгөд нөлөөлсөн эсэхийг InfoSec тодорхойлно.", [
+            _vb("as_scope", "Хамрах хүрээ", "textarea", req=True),
+            _vb("as_version", "Одоогийн хувилбар", "text", req=True, full=False),
+            _vb("as_internet_facing", "Интернэтэд нээлттэй эсэх", "select", req=True, full=False),
+            _vb("as_patch_available", "Patch гарсан эсэх", "select", req=True, full=False),
+            _vb("as_test_method", "Шалгасан арга", "textarea", req=True, ph="Скан, хувилбар шалгах, PoC…"),
+            _vb("evidence_files", "Нотолгоо (халдлагын баталгаа)", "files", req=True, block=True,
+                hint="Зураг, Excel, Word, PDF, TXT · олон файл сонгож болно · нэг файл 20 МБ хүртэл"),
+            _vb("as_exploited", "Ашиглагдсан шинж тэмдэг илэрсэн үү? (сэжигтэй лог, хандалт)", "select", core=True, lock_req=True),
+            _vb("as_incident_ref", "Зөрчлийн бүртгэлийн дугаар", "text", core=True,
+                hint="Тийм бол InfoSec, IT-ийн даргад яаралтай мэдэгдэл очих бөгөөд Зөрчлийн удирдлагын процессыг тусад нь эхлүүлнэ (/incidents/)."),
+            _vb("as_conclusion", "Үнэлгээний дүгнэлт", "textarea", core=True, lock_req=True),
+        ]),
+    ],
+    "risk": [
+        ("ra", "Эрсдэлийн үнэлгээ", "", [
+            _vb("ra_threat", "Аюул (Threat)", "textarea", req=True),
+            _vb("impacts", "Нөлөөлөл — 8 шалгуур (1–5)", "impacts", core=True, lock_req=True, block=True),
+            _vb("ra_likelihood", "Магадлал (1–5)", "likelihood", core=True, lock_req=True, block=True),
+            _vb("ra_decision", "Эрсдэлийн шийдвэр", "decision", core=True, lock_req=True, block=True),
+            _vb("ra_decision_note", "Шийдвэрийн үндэслэл", "textarea", core=True,
+                hint="Шилжүүлэх, зайлсхийх, хүлээн зөвшөөрөх шийдвэрт заавал бичнэ."),
+            _vb("risk_accept_until", "Эрсдэл хүлээн зөвшөөрөх хугацаа (хүртэл)", "date", core=True, lock_req=True, block=True),
+        ]),
+    ],
+}
+_VULN_BUILTIN_TYPE_LABELS = {"text": "Текст", "textarea": "Урт текст", "url": "Холбоос (URL)", "date": "Огноо",
+                             "select": "Сонголт", "cvss": "CVSS + түвшин + SLA", "files": "Файл хавсралт",
+                             "impacts": "8 шалгуурын үнэлгээ", "likelihood": "Магадлал + эрсдэлийн түвшин",
+                             "decision": "Шийдвэрийн сонголт"}
+
+
+def _vuln_builtin_index(form_key):
+    return {f["key"]: f for _, _, _, fields in VULN_FORM_BUILTINS[form_key] for f in fields}
+
+
+def _vuln_form_default(form_key):
+    return {"sections": [{"id": sid, "title": title, "desc": desc,
+                          "fields": [{"key": f["key"], "label": f["label"], "required": f["required"], "hidden": False,
+                                      "hint": f["hint"], "ph": f["ph"], "full": f["full"]} for f in fields]}
+                         for sid, title, desc, fields in VULN_FORM_BUILTINS[form_key]]}
+
+
+def _vuln_clean_text(v, limit):
+    return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(v if v is not None else "")).strip()[:limit]
+
+
+def _vuln_form_parse(form_key, data, taken_custom_keys=()):
+    """Validate one form's schema posted by the designer. Returns (normalized schema, error message or "")."""
+    if not isinstance(data, dict) or not isinstance(data.get("sections"), list):
+        return None, "Маягтын бүтэц буруу байна."
+    builtins = _vuln_builtin_index(form_key)
+    secs, seen, sec_ids, total = [], set(), set(), 0
+    if not data["sections"]:
+        return None, "Дор хаяж нэг хэсэг байх ёстой."
+    if len(data["sections"]) > VULN_FORM_MAX_SECTIONS:
+        return None, f"Хамгийн ихдээ {VULN_FORM_MAX_SECTIONS} хэсэг."
+    for s in data["sections"]:
+        if not isinstance(s, dict):
+            return None, "Хэсгийн бүтэц буруу."
+        sid = str(s.get("id") or "")
+        if not _VULN_SEC_ID_RE.match(sid) or sid in sec_ids:
+            return None, "Хэсгийн дугаар (id) буруу эсвэл давхардсан."
+        sec_ids.add(sid)
+        title = _vuln_clean_text(s.get("title"), 120)
+        if not title:
+            return None, "Хэсэг бүр гарчигтай байна."
+        fields = []
+        for f in s.get("fields") or []:
+            if not isinstance(f, dict):
+                return None, "Талбарын бүтэц буруу."
+            key = str(f.get("key") or "")
+            if key in seen:
+                return None, f"Талбар давхардсан: {key}"
+            seen.add(key)
+            label = _vuln_clean_text(f.get("label"), 200)
+            if not label:
+                return None, "Талбар бүр нэртэй байна."
+            out = {"key": key, "label": label, "required": bool(f.get("required")), "hidden": bool(f.get("hidden")),
+                   "hint": _vuln_clean_text(f.get("hint"), 300), "ph": _vuln_clean_text(f.get("ph"), 200),
+                   "full": bool(f.get("full"))}
+            if key in builtins:
+                b = builtins[key]
+                if b["core"]:
+                    out["hidden"] = False
+                if b["lockReq"]:
+                    out["required"] = True
+                if b["block"]:
+                    out["full"], out["ph"] = True, ""
+                if out["hidden"]:
+                    out["required"] = False
+            elif _VULN_CF_KEY_RE.match(key):
+                if key in taken_custom_keys:
+                    return None, f"«{label}» талбарын түлхүүр өөр маягтад ашиглагдсан байна."
+                typ = str(f.get("type") or "")
+                if typ not in VULN_CUSTOM_TYPES:
+                    return None, f"«{label}» талбарын төрөл буруу."
+                out["type"] = typ
+                if typ == "select":
+                    opts, oseen = [], set()
+                    for o in f.get("options") or []:
+                        o = _vuln_clean_text(o, 120)
+                        if o and o not in oseen:
+                            oseen.add(o)
+                            opts.append(o)
+                    if not opts:
+                        return None, f"«{label}» жагсаалтад дор хаяж нэг сонголт оруулна уу."
+                    if len(opts) > VULN_FORM_MAX_OPTIONS:
+                        return None, f"«{label}»: хамгийн ихдээ {VULN_FORM_MAX_OPTIONS} сонголт."
+                    out["options"] = opts
+                if typ in ("text", "textarea"):
+                    try:
+                        mx = int(f.get("max") or 0)
+                    except (TypeError, ValueError):
+                        mx = 0
+                    cap = 10000 if typ == "textarea" else 1000
+                    out["max"] = mx if 1 <= mx <= cap else (5000 if typ == "textarea" else 300)
+                if typ in ("select", "yesno", "date"):
+                    out["ph"] = ""
+                if out["hidden"]:
+                    out["required"] = False
+            else:
+                return None, f"Үл мэдэгдэх талбар: {key}"
+            fields.append(out)
+            total += 1
+        secs.append({"id": sid, "title": title, "desc": _vuln_clean_text(s.get("desc"), 500), "fields": fields})
+    if total > VULN_FORM_MAX_FIELDS:
+        return None, f"Хамгийн ихдээ {VULN_FORM_MAX_FIELDS} талбар."
+    missing = [builtins[k]["label"] for k in builtins if k not in seen]
+    if missing:
+        return None, "Системийн талбарыг устгах боломжгүй (нууж болно): " + ", ".join(missing)
+    return {"sections": secs}, ""
+
+
+def _vuln_forms_raw(conn):
+    try:
+        data = json.loads(get_setting(conn, VULN_FORMS_SETTING, "") or "{}")
+    except (TypeError, ValueError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _vuln_form_stored(conn, form_key, raw=None):
+    """The saved schema of one form, repaired against the built-in registry (falls back to the default)."""
+    raw = _vuln_forms_raw(conn) if raw is None else raw
+    data = raw.get(form_key)
+    if not isinstance(data, dict):
+        return _vuln_form_default(form_key)
+    # Built-ins added by later versions (or lost) go back to their default section, else the first one.
+    builtins = _vuln_builtin_index(form_key)
+    present = {f.get("key") for s in data.get("sections") or [] if isinstance(s, dict) for f in s.get("fields") or [] if isinstance(f, dict)}
+    data = json.loads(json.dumps(data))
+    secs = [s for s in data.get("sections") or [] if isinstance(s, dict)]
+    if secs:
+        for sid, _t, _d, fields in VULN_FORM_BUILTINS[form_key]:
+            for b in fields:
+                if b["key"] in present:
+                    continue
+                target = next((s for s in secs if s.get("id") == sid), secs[0])
+                target.setdefault("fields", []).append({"key": b["key"], "label": b["label"], "required": b["required"],
+                                                        "hidden": False, "hint": b["hint"], "ph": b["ph"], "full": b["full"]})
+    data["sections"] = secs
+    parsed, err = _vuln_form_parse(form_key, data)
+    return parsed if parsed and not err else _vuln_form_default(form_key)
+
+
+def vuln_form_schema(conn, form_key, raw=None):
+    """One form for rendering: stored schema with the built-in flags (core / lockReq / block / type) attached."""
+    builtins = _vuln_builtin_index(form_key)
+    form = _vuln_form_stored(conn, form_key, raw)
+    for s in form["sections"]:
+        for f in s["fields"]:
+            b = builtins.get(f["key"])
+            f["builtin"] = bool(b)
+            if b:
+                f.update(type=b["type"], core=b["core"], lockReq=b["lockReq"], block=b["block"],
+                         typeLabel=_VULN_BUILTIN_TYPE_LABELS.get(b["type"], b["type"]))
+            else:
+                f.update(core=False, lockReq=False, block=False, typeLabel=VULN_CUSTOM_TYPES[f["type"]])
+    form["title"] = VULN_FORM_TITLES[form_key]
+    return form
+
+
+def vuln_forms_all(conn):
+    raw = _vuln_forms_raw(conn)
+    return {k: vuln_form_schema(conn, k, raw) for k in VULN_FORM_KEYS}
+
+
+def _vuln_form_fields(form):
+    return [f for s in form["sections"] for f in s["fields"]]
+
+
+def vuln_form_field(form, key):
+    return next((f for f in _vuln_form_fields(form) if f["key"] == key), None)
+
+
+def vuln_form_visible(form, key):
+    f = vuln_form_field(form, key)
+    return bool(f) and not f["hidden"]
+
+
+def vuln_form_required(form, key):
+    f = vuln_form_field(form, key)
+    return bool(f) and not f["hidden"] and f["required"]
+
+
+def vuln_custom_values(row):
+    try:
+        data = json.loads((row["vuln_custom"] if row is not None else "") or "{}")
+    except (TypeError, ValueError, KeyError, IndexError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def vuln_custom_labels(conn):
+    """{cf_key: label} across all forms (for the activity log)."""
+    return {f["key"]: f["label"] for form in vuln_forms_all(conn).values() for f in _vuln_form_fields(form) if not f["builtin"]}
+
+
+def _vuln_custom_parse(conn, form_key, form, row, enforce_required):
+    """Custom field values posted for one form. Fields not posted keep their stored value.
+
+    Returns (merged {key: value} for the record, errors)."""
+    schema = vuln_form_schema(conn, form_key)
+    merged = vuln_custom_values(row)
+    errors = {}
+    for f in _vuln_form_fields(schema):
+        if f["builtin"]:
+            continue
+        key, typ = f["key"], f["type"]
+        if key not in form:
+            v = str(merged.get(key, "") or "")
+        else:
+            v = (form.get(key) or "").strip()
+            if typ in ("text", "textarea") and len(v) > f.get("max", 5000):
+                errors[key] = f"Хамгийн ихдээ {f.get('max', 5000)} тэмдэгт."
+            elif v and typ == "number":
+                try:
+                    num = Decimal(v.replace(",", "."))
+                    if not num.is_finite() or len(v) > 40:
+                        raise ValueError
+                    v = format(num.normalize(), "f")
+                except (ArithmeticError, ValueError):
+                    errors[key] = "Тоо оруулна уу."
+            elif v and typ == "date" and not _valid_iso_date(v):
+                errors[key] = "Огноо буруу форматтай байна."
+            elif v and typ == "select" and v not in f.get("options", []):
+                errors[key] = "Жагсаалтаас сонгоно уу."
+            elif v and typ == "yesno" and v not in ("yes", "no"):
+                errors[key] = "Тийм эсвэл Үгүй сонгоно уу."
+            elif v and typ == "url":
+                p = urlparse(v)
+                if p.scheme not in ("http", "https") or not p.netloc or len(v) > 2000:
+                    errors[key] = "http:// эсвэл https://-ээр эхэлсэн холбоос оруулна уу."
+            elif v and typ == "email" and (not _VULN_EMAIL_RE.match(v) or len(v) > 254):
+                errors[key] = "И-мэйл хаяг буруу байна."
+        if enforce_required and f["required"] and not f["hidden"] and not v and key not in errors:
+            errors[key] = "Заавал бөглөнө."
+        if key not in errors:
+            if v:
+                merged[key] = v
+            else:
+                merged.pop(key, None)
+    return merged, errors
+
+
+def _vuln_custom_display(conn, key, value):
+    if value in (None, ""):
+        return ""
+    for form in vuln_forms_all(conn).values():
+        f = vuln_form_field(form, key)
+        if f and not f["builtin"] and f["type"] == "yesno":
+            return {"yes": "Тийм", "no": "Үгүй"}.get(value, value)
+    return value
+
+
+def _vuln_custom_log(conn, row, user, old, new):
+    """Activity log: one entry per changed custom field (field = cf_* key; label resolved when shown)."""
+    for key in sorted(set(old) | set(new)):
+        if str(old.get(key, "")) != str(new.get(key, "")):
+            _vuln_log(conn, row["id"], user, "updated", key, _vuln_custom_display(conn, key, old.get(key, "")),
+                      _vuln_custom_display(conn, key, new.get(key, "")))
+
+
+def _vuln_form_summary(form):
+    parts = []
+    for s in form["sections"]:
+        names = []
+        for f in s["fields"]:
+            t = f["label"] + ("*" if f["required"] else "")
+            if f["hidden"]:
+                t += " (нуусан)"
+            if f["key"].startswith("cf_"):
+                t += f" [{VULN_CUSTOM_TYPES.get(f.get('type'), '')}" + (": " + " / ".join(f.get("options", [])) if f.get("options") else "") + "]"
+            names.append(t)
+        parts.append(f"{s['title']}: " + ", ".join(names) if names else f"{s['title']}: —")
+    return " | ".join(parts)
+
+
+def vuln_forms_save(conn, user, form, reason):
+    form_key = form.get("form_key", "")
+    if form_key not in VULN_FORM_KEYS:
+        return 422, {"error": "Маягт буруу байна."}
+    try:
+        data = json.loads(form.get("schema") or "")
+    except (TypeError, ValueError):
+        return 422, {"error": "Маягтын бүтэц буруу байна."}
+    raw = _vuln_forms_raw(conn)
+    taken = {f["key"] for k in VULN_FORM_KEYS if k != form_key
+             for f in _vuln_form_fields(_vuln_form_stored(conn, k, raw)) if f["key"].startswith("cf_")}
+    new, err = _vuln_form_parse(form_key, data, taken)
+    if err:
+        return 422, {"error": err}
+    old = _vuln_form_stored(conn, form_key, raw)
+    if old == new:
+        return 200, {"message": "Өөрчлөлт алга."}
+    raw[form_key] = new
+    set_setting(conn, VULN_FORMS_SETTING, json.dumps(raw, ensure_ascii=False))
+    _vuln_config_log(conn, user, f"{VULN_FORMS_SETTING}:{form_key}", f"Маягтын бүтэц — {VULN_FORM_TITLES[form_key]}",
+                     _vuln_form_summary(old), _vuln_form_summary(new), reason)
+    conn.commit()
+    return 200, {"message": f"«{VULN_FORM_TITLES[form_key]}» маягтын бүтэц хадгалагдлаа."}
+
+
+# ── VulnReg settings (Phase 1: SLA policy, deadline warning, change history) ──────────────
+VULN_SETTINGS_TEMPLATE = BASE_DIR / "templates" / "vuln_settings.html"
+_VULN_SETTING_ENTITY = "vuln_setting"
+_VULN_SLA_LABELS = {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}
+
+
+def vuln_is_infosec_strict(user):
+    """True only for users holding the InfoSec VulnReg role — Superadmin gets no implicit pass here."""
+    return "infosec" in _vroles(user)
+
+
+def vuln_can_view_settings(user):
+    """Settings menu/page/API: Information Security (InfoSec) personnel only — enforced on every settings route."""
+    return vuln_is_infosec_strict(user)
+
+
+def vuln_can_edit_settings(user):
+    return vuln_is_infosec_strict(user)
+
+
+def _vuln_sla_text(sla):
+    return "; ".join(
+        f"{_VULN_SLA_LABELS[l]} ≥{sla[l]['min']:.1f} → {sla[l]['days']} хоног" if l != "low"
+        else f"Low >0 → {sla[l]['days']} хоног" for l in VULN_SLA_LEVELS)
+
+
+VULN_REASON_MAX = 2000
+
+
+def _vuln_reason(form):
+    """Every configuration change must state why. Returns (reason, error-dict)."""
+    reason = (form.get("reason") or "").strip()
+    if not reason:
+        return "", {"reason": "Өөрчлөлтийн шалтгааныг заавал бичнэ үү."}
+    if len(reason) > VULN_REASON_MAX:
+        return "", {"reason": f"Хамгийн ихдээ {VULN_REASON_MAX} тэмдэгт."}
+    return reason, {}
+
+
+def _vuln_config_log(conn, user, setting, label, old, new, reason):
+    """Append to the configuration audit log (who, when, previous value, new value, reason) + the global audit log."""
+    conn.execute(
+        """INSERT INTO vuln_config_audit(actor_user_id, actor_name, setting, label, old_value, new_value, reason, created_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (user["id"], _vuln_user_label(user), setting, label, "" if old is None else str(old), "" if new is None else str(new),
+         reason, now_utc().isoformat()))
+    record_audit(conn, user["id"], "update", _VULN_SETTING_ENTITY, entity_id=setting,
+                 details=f"{label}: {old or '—'} ⇒ {new or '—'}. Шалтгаан: {reason}")
+
+
+def _vuln_settings_history(conn, limit=100):
+    rows = conn.execute("SELECT * FROM vuln_config_audit ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    out = [{"at": r["created_at"], "actor": r["actor_name"] or "—", "setting": r["label"] or r["setting"],
+            "old": r["old_value"], "new": r["new_value"], "reason": r["reason"]} for r in rows]
+    if len(out) < limit:
+        # Changes made before reasons were recorded (kept in the global audit log).
+        legacy = conn.execute(
+            """SELECT l.created_at, l.details, COALESCE(NULLIF(l.actor_name, ''), u.display_name, u.email, '') AS actor
+               FROM audit_logs l LEFT JOIN users u ON u.id = l.actor_user_id
+               WHERE l.entity_type = ? AND l.details NOT LIKE '%Шалтгаан:%' ORDER BY l.id DESC LIMIT ?""",
+            (_VULN_SETTING_ENTITY, limit - len(out))).fetchall()
+        out += [{"at": r["created_at"], "actor": r["actor"] or "—", "setting": "", "old": "", "new": r["details"], "reason": ""}
+                for r in legacy]
+    return out
+
+
+def _vuln_settings_users(conn):
+    return [{"id": r["id"], "name": _vuln_user_label(r), "email": r["email"] or "", "dept": r["dept"] or "",
+             "roles": vuln_roles_of(r), "superadmin": r["role"] == ROLE_SUPERADMIN}
+            for r in conn.execute(
+                """SELECT u.id, u.display_name, u.username, u.email, u.role, u.vuln_role, d.name AS dept FROM users u
+                   LEFT JOIN departments d ON d.id = u.department_id WHERE u.is_active = 1
+                   ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username)""")]
+
+
+def _vuln_substitutes(conn):
+    today = _vuln_today()
+    rows = conn.execute(
+        f"""SELECT s.*, {_uname_sql('p')} AS principal_name, {_uname_sql('q')} AS substitute_name, {_uname_sql('c')} AS created_name
+            FROM vuln_substitutes s LEFT JOIN users p ON p.id = s.principal_id LEFT JOIN users q ON q.id = s.substitute_id
+            LEFT JOIN users c ON c.id = s.created_by
+            WHERE s.revoked_at = '' AND s.end_date >= ? ORDER BY s.start_date, s.id""", (today,)).fetchall()
+    return [{"id": r["id"], "role": r["role"], "roleLabel": VULN_ROLE_LABELS.get(r["role"], r["role"]),
+             "principal": r["principal_name"] or "", "principalId": r["principal_id"], "substitute": r["substitute_name"] or "",
+             "substituteId": r["substitute_id"], "start": r["start_date"], "end": r["end_date"], "note": r["note"],
+             "active": r["start_date"] <= today <= r["end_date"], "createdBy": r["created_name"] or ""} for r in rows]
+
+
+def vuln_api_settings(conn, user):
+    if not vuln_can_view_settings(user):
+        return 403, {"error": "Тохиргоо зөвхөн админ эрхтэй (InfoSec) хэрэглэгчид харагдана."}
+    return 200, {
+        "canEdit": vuln_can_edit_settings(user),
+        "sla": vuln_sla(conn), "slaDefault": VULN_SLA_DEFAULT, "slaMaxDays": VULN_SLA_MAX_DAYS,
+        "dueSoonDays": vuln_soon_days(conn), "dueSoonDefault": VULN_DUE_SOON_DEFAULT,
+        "roles": [{"key": r, "label": VULN_ROLE_LABELS[r]} for r in VULN_ROLES],
+        "users": _vuln_settings_users(conn),
+        "perms": vuln_role_perms(conn), "permKeys": [{"key": p, "label": VULN_PERM_LABELS[p]} for p in VULN_PERMS],
+        "permsLocked": [list(x) for x in sorted(VULN_PERMS_LOCKED)],
+        "substitutes": _vuln_substitutes(conn), "substitutableRoles": list(VULN_SUBSTITUTABLE_ROLES),
+        "risk": vuln_risk_config(conn), "riskDefault": VULN_RISK_DEFAULT,
+        "forms": vuln_forms_all(conn),
+        "formsDefault": {k: _vuln_form_default(k) for k in VULN_FORM_KEYS},
+        "customTypes": [{"key": k, "label": v} for k, v in VULN_CUSTOM_TYPES.items()],
+        "history": _vuln_settings_history(conn),
+        "selfId": user["id"],
+    }
+
+
+def _vuln_parse_sla_form(form):
+    """Form fields <level>_min / <level>_days -> (sla dict, field errors)."""
+    sla, errors = {}, {}
+    for level in VULN_SLA_LEVELS:
+        band = {}
+        days_raw = (form.get(f"{level}_days") or "").strip()
+        band["days"] = int(days_raw) if days_raw.isdigit() and len(days_raw) <= 4 else None
+        if band["days"] is None:
+            errors[f"{level}_days"] = f"1–{VULN_SLA_MAX_DAYS} хоорондох бүхэл тоо оруулна уу."
+        if level == "low":
+            band["min"] = 0.1
+        else:
+            min_raw = (form.get(f"{level}_min") or "").strip().replace(",", ".")
+            try:
+                band["min"] = float(Decimal(min_raw).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+            except (ArithmeticError, ValueError):
+                band["min"] = None
+                errors[f"{level}_min"] = "Тоо оруулна уу (жишээ: 7.0)."
+        sla[level] = band
+    return sla, dict(_vuln_sla_errors(sla), **errors)
+
+
+def _vuln_role_text(conn, uid):
+    return _vuln_user_label(_vuln_user_by_id(conn, uid)) or f"#{uid}"
+
+
+def vuln_api_settings_save(conn, user, form):
+    """Save one settings section. Every change requires a reason and is written to vuln_config_audit."""
+    if not vuln_can_edit_settings(user):
+        return 403, {"error": "Тохиргоо өөрчлөх эрхгүй байна (зөвхөн админ — InfoSec)."}
+    section = form.get("section", "")
+    reason, rerr = _vuln_reason(form)
+
+    if section == "sla":
+        sla, errors = _vuln_parse_sla_form(form)
+        errors.update(rerr)
+        if errors:
+            return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+        old = vuln_sla(conn)
+        if old == sla:
+            return 200, {"message": "Өөрчлөлт алга.", "sla": old}
+        set_setting(conn, VULN_SLA_SETTING, json.dumps(sla))
+        _vuln_config_log(conn, user, VULN_SLA_SETTING, "Засварлах хугацаа (SLA)", _vuln_sla_text(old), _vuln_sla_text(sla), reason)
+        conn.commit()
+        return 200, {"message": "Засварлах хугацааны тохиргоо хадгалагдлаа. Шинэ бүртгэлд хэрэгжинэ.", "sla": sla}
+
+    if section == "deadline":
+        raw = (form.get("due_soon_days") or "").strip()
+        errors = dict(rerr)
+        if not (raw.isdigit() and 0 <= int(raw) <= 90):
+            errors["due_soon_days"] = "0–90 хоорондох бүхэл тоо оруулна уу."
+        if errors:
+            return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+        old, new = vuln_soon_days(conn), int(raw)
+        if old == new:
+            return 200, {"message": "Өөрчлөлт алга.", "dueSoonDays": old}
+        set_setting(conn, VULN_DUE_SOON_SETTING, str(new))
+        _vuln_config_log(conn, user, VULN_DUE_SOON_SETTING, "«Хугацаа дөхсөн» босго", f"{old} хоног", f"{new} хоног", reason)
+        conn.commit()
+        return 200, {"message": "Хугацааны сануулгын тохиргоо хадгалагдлаа.", "dueSoonDays": new}
+
+    if section == "role":
+        return 410, {"error": "Эрхийг Хэрэглэгчид хуудаснаас (Засах) удирдана."}
+    if section == "forms":
+        if rerr:
+            return 422, {"error": "Өөрчлөлтийн шалтгааныг заавал бичнэ үү.", "fields": rerr}
+        return vuln_forms_save(conn, user, form, reason)
+    if section == "perms":
+        if rerr:
+            return 422, {"error": "Талбаруудыг шалгана уу.", "fields": rerr}
+        old = vuln_role_perms(conn)
+        new = json.loads(json.dumps(old))
+        for role in VULN_ROLES:
+            for perm in VULN_PERMS:
+                if (role, perm) in VULN_PERMS_LOCKED:
+                    continue
+                new[role][perm] = form.get(f"{role}__{perm}") == "1"
+        diffs = [(r, p) for r in VULN_ROLES for p in VULN_PERMS if old[r][p] != new[r][p]]
+        if not diffs:
+            return 200, {"message": "Өөрчлөлт алга.", "perms": old}
+        set_setting(conn, VULN_PERMS_SETTING, json.dumps(new))
+        yn = lambda b: "Тийм" if b else "Үгүй"
+        for r, p in diffs:
+            _vuln_config_log(conn, user, f"perm:{r}:{p}", f"Хандах эрх — {VULN_ROLE_LABELS[r]} / {VULN_PERM_LABELS[p]}",
+                             yn(old[r][p]), yn(new[r][p]), reason)
+        conn.commit()
+        return 200, {"message": f"Хандах эрхийн тохиргоо хадгалагдлаа ({len(diffs)} өөрчлөлт).", "perms": new}
+
+    if section == "substitute_add":
+        errors = dict(rerr)
+        role = (form.get("role") or "").strip()
+        if role not in VULN_SUBSTITUTABLE_ROLES:
+            errors["role"] = "IT-ийн дарга эсвэл CTO-г сонгоно уу."
+        def _uid(key):
+            raw = (form.get(key) or "").strip()
+            return conn.execute("SELECT * FROM users WHERE id = ? AND is_active = 1", (int(raw),)).fetchone() if raw.isdigit() else None
+        principal, sub = _uid("principal_id"), _uid("substitute_id")
+        if not principal:
+            errors["principal_id"] = "Орлуулагдах ажилтныг сонгоно уу."
+        elif role in VULN_SUBSTITUTABLE_ROLES and role not in vuln_roles_of(principal):
+            errors["principal_id"] = f"Сонгосон ажилтан «{VULN_ROLE_LABELS[role]}» эрхгүй байна."
+        if not sub:
+            errors["substitute_id"] = "Орлон гүйцэтгэгчийг сонгоно уу."
+        elif principal and sub["id"] == principal["id"]:
+            errors["substitute_id"] = "Өөр ажилтан сонгоно уу."
+        start, end = (form.get("start_date") or "").strip(), (form.get("end_date") or "").strip()
+        if not _valid_iso_date(start):
+            errors["start_date"] = "Эхлэх огноо оруулна уу."
+        if not _valid_iso_date(end):
+            errors["end_date"] = "Дуусах огноо оруулна уу."
+        elif "start_date" not in errors and end < start:
+            errors["end_date"] = "Эхлэх огнооноос өмнө байж болохгүй."
+        elif end < _vuln_today():
+            errors["end_date"] = "Өнгөрсөн хугацаанд орлох томилох боломжгүй."
+        if not errors and conn.execute(
+                """SELECT 1 FROM vuln_substitutes WHERE role = ? AND principal_id = ? AND substitute_id = ? AND revoked_at = ''
+                   AND start_date <= ? AND end_date >= ?""", (role, principal["id"], sub["id"], end, start)).fetchone():
+            errors["start_date"] = "Энэ хугацаанд давхардсан орлох томилгоо байна."
+        if errors:
+            return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+        note = (form.get("note") or "").strip()[:500]
+        cur = conn.execute(
+            """INSERT INTO vuln_substitutes(role, principal_id, substitute_id, start_date, end_date, note, created_by, created_at)
+               VALUES (?,?,?,?,?,?,?,?)""", (role, principal["id"], sub["id"], start, end, note, user["id"], now_utc().isoformat()))
+        _vuln_config_log(conn, user, f"substitute:{cur.lastrowid}", f"Орлон гүйцэтгэгч — {VULN_ROLE_LABELS[role]}", "",
+                         f"{_vuln_user_label(principal)} → {_vuln_user_label(sub)}, {start} – {end}" + (f" ({note})" if note else ""),
+                         reason)
+        conn.commit()
+        _vuln_notify([sub], "[Эмзэг байдал] Таныг орлон гүйцэтгэгчээр томиллоо", [
+            f"{_vuln_user_label(user)} таныг {start} – {end} хугацаанд {_vuln_user_label(principal)}-ийн "
+            f"({VULN_ROLE_LABELS[role]}) оронд эмзэг байдлын бүртгэлийн батлах, томилох үүргийг гүйцэтгэхээр томиллоо.",
+        ] + ([f"Тайлбар: {note}"] if note else []), 0)
+        return 200, {"message": "Орлон гүйцэтгэгч томилогдлоо."}
+
+    if section == "substitute_revoke":
+        sid = (form.get("id") or "").strip()
+        r = conn.execute("SELECT * FROM vuln_substitutes WHERE id = ? AND revoked_at = ''", (int(sid),)).fetchone() if sid.isdigit() else None
+        if not r:
+            return 404, {"error": "Томилгоо олдсонгүй."}
+        if rerr:
+            return 422, {"error": "Талбаруудыг шалгана уу.", "fields": rerr}
+        conn.execute("UPDATE vuln_substitutes SET revoked_at = ?, revoked_by = ? WHERE id = ?", (now_utc().isoformat(), user["id"], r["id"]))
+        _vuln_config_log(conn, user, f"substitute:{r['id']}", f"Орлон гүйцэтгэгч цуцлах — {VULN_ROLE_LABELS.get(r['role'], r['role'])}",
+                         f"{_vuln_role_text(conn, r['principal_id'])} → {_vuln_role_text(conn, r['substitute_id'])}, "
+                         f"{r['start_date']} – {r['end_date']}", "Цуцалсан", reason)
+        conn.commit()
+        return 200, {"message": "Орлох томилгоог цуцаллаа."}
+
+    if section == "risk":
+        errors = dict(rerr)
+        crit = [(form.get(f"criterion_{i}") or "").strip()[:120] for i in range(1, 9)]
+        for i, c in enumerate(crit, 1):
+            if not c:
+                errors[f"criterion_{i}"] = "Нэр оруулна уу."
+        lo, med = (form.get("low_max") or "").strip(), (form.get("medium_max") or "").strip()
+        lo = int(lo) if lo.isdigit() else None
+        med = int(med) if med.isdigit() else None
+        if lo is None or not 1 <= lo <= 23:
+            errors["low_max"] = "1–23 хооронд."
+        if med is None or not 2 <= med <= 24:
+            errors["medium_max"] = "2–24 хооронд."
+        elif lo is not None and med <= lo:
+            errors["medium_max"] = "Бага (Low)-ийн дээд хязгаараас их байх ёстой."
+        if errors:
+            return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+        old = vuln_risk_config(conn)
+        new = {"criteria": crit, "low_max": lo, "medium_max": med}
+        if old == new:
+            return 200, {"message": "Өөрчлөлт алга.", "risk": old}
+        set_setting(conn, VULN_RISK_SETTING, json.dumps(new, ensure_ascii=False))
+        fmt = lambda c: f"Low ≤{c['low_max']}, Medium ≤{c['medium_max']}, High >{c['medium_max']}; шалгуур: " + ", ".join(c["criteria"])
+        _vuln_config_log(conn, user, VULN_RISK_SETTING, "Эрсдэлийн матриц (MAS-14)", fmt(old), fmt(new), reason)
+        conn.commit()
+        return 200, {"message": "Эрсдэлийн матрицын тохиргоо хадгалагдлаа.", "risk": new}
+
+    return 400, {"error": "Буруу хүсэлт."}
+
+
+def _vuln_recalc_plan(conn, sla):
+    """Open records whose severity / SLA days differ from the current policy, with their new values.
+
+    The due date is moved only when it was derived automatically (reported date, else registration date,
+    + the stored SLA days); a manually entered due date is kept.
+    """
+    rows = conn.execute(
+        f"SELECT v.* FROM vulnerabilities v WHERE v.deleted_at = '' AND {_VULN_OPEN_SQL} AND v.cvss_score IS NOT NULL "
+        "ORDER BY v.id").fetchall()
+    plan = []
+    for r in rows:
+        sev, days = cvss_severity(r["cvss_score"], sla)
+        if sev == (r["severity"] or "") and days == r["remediation_days"]:
+            continue
+        base_raw = r["reported_date"] or (r["created_at"] or "")[:10]
+        try:
+            base = dt.date.fromisoformat(base_raw)
+        except ValueError:
+            base = None
+        due = r["due_date"] or ""
+        auto = base is not None and (
+            not due or (r["remediation_days"] is not None and due == (base + dt.timedelta(days=r["remediation_days"])).isoformat()))
+        new_due = due
+        if auto and days is not None:
+            new_due = (base + dt.timedelta(days=days)).isoformat()
+        plan.append({"row": r, "severity": sev, "days": days, "due": new_due, "manual_due": not auto})
+    return plan
+
+
+def vuln_api_settings_recalc(conn, user, form):
+    if not vuln_can_edit_settings(user):
+        return 403, {"error": "Тохиргоо өөрчлөх эрхгүй байна (зөвхөн админ — InfoSec)."}
+    sla = vuln_sla(conn)
+    plan = _vuln_recalc_plan(conn, sla)
+    summary = {
+        "affected": len(plan),
+        "dueChanged": sum(1 for p in plan if p["due"] != (p["row"]["due_date"] or "")),
+        "manualDueKept": sum(1 for p in plan if p["manual_due"]),
+        "sample": [_vuln_ref(p["row"]) for p in plan[:10]],
+    }
+    if form.get("dry_run") == "1" or not plan:
+        return 200, dict(summary, dryRun=True)
+    reason, rerr = _vuln_reason(form)
+    if rerr:
+        return 422, {"error": "Өөрчлөлтийн шалтгааныг бичнэ үү.", "fields": rerr}
+    ts = now_utc().isoformat()
+    note = "SLA тохиргооны дагуу дахин тооцоолов."
+    for p in plan:
+        r = p["row"]
+        conn.execute("UPDATE vulnerabilities SET severity = ?, remediation_days = ?, due_date = ?, updated_at = ?, updated_by = ? "
+                     "WHERE id = ?", (p["severity"], p["days"], p["due"], ts, user["id"], r["id"]))
+        if p["severity"] != (r["severity"] or ""):
+            _vuln_log(conn, r["id"], user, "updated", "severity", r["severity"], p["severity"], note)
+        if p["due"] != (r["due_date"] or ""):
+            _vuln_log(conn, r["id"], user, "updated", "due_date", r["due_date"], p["due"], note)
+    _vuln_config_log(conn, user, "recalc", "Нээлттэй бүртгэлийг SLA-ийн дагуу дахин тооцоолох",
+                     ", ".join(_vuln_ref(p["row"]) for p in plan[:20]) + (" …" if len(plan) > 20 else ""),
+                     f"{len(plan)} бүртгэл шинэчлэгдсэн (хугацаа шилжсэн: {summary['dueChanged']}, "
+                     f"гараар оруулсан хугацаа хадгалсан: {summary['manualDueKept']})", reason)
+    conn.commit()
+    return 200, dict(summary, dryRun=False, message=f"{len(plan)} бүртгэл шинэчлэгдлээ.")
+
+
+def list_vulnerabilities(conn, user):
+    """Saved vulnerabilities for the dashboard table (same visibility rules as the Vulnerabilities page)."""
+    ensure_vulnerabilities_table(conn)
+    scope_sql, scope_args = _vuln_scope(user)
+    rows = conn.execute(_VULN_SELECT_SQL + f" WHERE {scope_sql} ORDER BY v.id DESC", scope_args).fetchall()
+    out = []
+    for r in rows:
+        created = (r["created_at"] or "")[:10]
+        out.append({
+            "id": r["id"],
+            "ref": _vuln_ref(r),
+            "cve": r["cve_id"], "title": r["title"],
+            "source": r["source"], "sourceUrl": r["source_url"],
+            "published": r["published_date"], "reported": r["reported_date"],
+            "description": r["description"], "threatTrend": r["threat_trend"], "scope": r["scope"],
+            "verification": r["verification_method"], "recommendation": r["recommendation"],
+            "cvss": r["cvss_score"], "sev": (r["severity"] or "").lower(),
+            "days": r["remediation_days"], "due": r["due_date"],
+            "status": r["status"] or "new", "statusLabel": VULN_STATUS_LABELS.get(r["status"] or "new", ""),
+            "dept": r["department_name"] or "", "createdBy": r["created_by_name"] or "", "created": created,
+        })
+    return out
+
+
+VULN_LIST_TEMPLATE = BASE_DIR / "templates" / "vuln_list.html"
+VULN_DETAIL_TEMPLATE = BASE_DIR / "templates" / "vuln_detail.html"
+_VULNREG_STATIC = {"vulnreg.css": "text/css; charset=utf-8", "vulnreg.js": "application/javascript; charset=utf-8"}
+
+
+def _vulnreg_sidebar(conn, user, active):
+    """VulnReg shell sidebar; the «Эмзэг байдал» badge counts records waiting on this user (see _vuln_todo_sql)."""
+    todo = vuln_todo_count(conn, user)
+    def item(key, href, icon, label, badge=0, neutral=False):
+        cur = ' aria-current="page"' if key == active else ""
+        b = f'<span class="sb-badge{" neutral" if neutral else ""}" aria-hidden="true">{badge}</span>' if badge else ""
+        tip = f"{label} ({badge})" if badge else label
+        return (f'<li><a class="sb-item" href="{html.escape(href)}"{cur} data-tip="{html.escape(tip)}" aria-label="{html.escape(tip)}">'
+                f'<svg class="ico" aria-hidden="true"><use href="#i-{icon}"/></svg><span class="sb-text">{html.escape(label)}</span>{b}</a></li>')
+
+    def section(label, items):
+        items = [i for i in items if i]
+        if not items:
+            return ""
+        return f'<div class="sb-section"><div class="sb-label">{html.escape(label)}</div><ul class="sb-list">{"".join(items)}</ul></div>'
+
+    return "".join([
+        section("Хяналт", [
+            item("dashboard", "/registry/vulnerabilities/dashboard", "grid", "Хяналтын самбар") if vuln_perm(user, "dashboard") else "",
+        ]),
+        section("Бүртгэл", [
+            item("vulns", "/registry/vulnerabilities", "bug", "Эмзэг байдал", todo),
+        ]),
+        section("Тохиргоо", [
+            item("settings", "/registry/vulnerabilities/settings", "cog", "Тохиргоо") if vuln_can_view_settings(user) else "",
+        ]),
+    ])
+
+
+def _vulnreg_page(conn, user, template, active, boot):
+    name = (user["display_name"] or user["username"] or user["email"] or "").strip()
+    parts = [p for p in re.split(r"[\s.]+", name) if p]
+    initials = "".join(p[0] for p in parts[-2:]).upper() or "?"
+    role = user_role(user)
+    user = vuln_user(conn, user)
+    vr = user["_vrole"]
+    role_label = vuln_roles_text(vr) if vr else ({ROLE_SUPERADMIN: "Супер админ"}.get(role, "Хэрэглэгч"))
+    if user["_vsubs"]:
+        role_label += " · орлон: " + ", ".join(VULN_ROLE_LABELS[s["role"]] for s in user["_vsubs"])
+    page = template.read_text(encoding="utf-8")
+    for key, value in (("{{USER_NAME}}", name or "-"), ("{{USER_INITIALS}}", initials), ("{{USER_ROLE}}", role_label)):
+        page = page.replace(key, html.escape(value, quote=True))
+    page = page.replace("{{SIDEBAR}}", _vulnreg_sidebar(conn, user, active))
+    boot = dict(boot, csrf=_csrf_token(), userId=user["id"], role=role,
+                canManage=vuln_can_manage(user), canDelete=vuln_can_delete(user), canExport=vuln_perm(user, "export"),
+                isItHead=vuln_can_assign(user), isCto=vuln_is_cto(user), isAdmin=vuln_is_admin(user),
+                vulnRoles=sorted(user["_vroles"]), sla=vuln_sla(conn), todoCount=vuln_todo_count(conn, user),
+                forms=vuln_forms_all(conn))
+    return page.replace("{{BOOT_JSON}}", _script_json(boot))
+
+
+def vulnerability_dashboard_page(conn, user, notice="", error=""):
+    """VulnReg dashboard (standalone shell with its own sidebar). The table shows saved records; KPIs and charts are sample data."""
+    role = user_role(user)
+    user = vuln_user(conn, user)
+    name = (user["display_name"] or user["username"] or user["email"] or "").strip()
+    parts = [p for p in re.split(r"[\s.]+", name) if p]
+    initials = "".join(p[0] for p in parts[-2:]).upper() or "?"
+    role_label = vuln_roles_text(user["_vrole"]) if user["_vrole"] else {ROLE_SUPERADMIN: "Супер админ"}.get(role, "Хэрэглэгч")
+    dept_name = user["department_name"] or ""
+    dept_slug = user["department_slug"] or ""
+    if role == ROLE_SUPERADMIN or not dept_slug:
+        assets_url = "/departments"
+    else:
+        assets_url = f"/departments/{quote(dept_slug)}/assets"
+    scope = "" if vuln_perm(user, "view_all") else " · Надад хамаарах бүртгэл"
+    page = VULN_DASHBOARD_TEMPLATE.read_text(encoding="utf-8")
+    for key, value in (
+        ("{{USER_NAME}}", name or "-"),
+        ("{{USER_INITIALS}}", initials),
+        ("{{USER_ROLE}}", role_label),
+        ("{{ASSETS_URL}}", assets_url),
+        ("{{SCOPE_LABEL}}", scope),
+        ("{{NOTICE}}", notice),
+        ("{{ERROR}}", error),
+        ("{{TODAY}}", now_utc().date().isoformat()),
+    ):
+        page = page.replace(key, html.escape(value, quote=True))
+    page = page.replace("{{SIDEBAR}}", _vulnreg_sidebar(conn, user, "dashboard"))
+    # Inserted last so record text is never re-scanned for placeholders.
+    return page.replace("{{VULN_ROWS_JSON}}", _script_json(list_vulnerabilities(conn, user)))
 
 
 def audit_page(conn, user, notice="", query=None):
@@ -5598,21 +8814,25 @@ def get_attachment_entry(conn, register, entry_id):
 
 def attachment_register_list_page(conn, user, register, notice=""):
     columns = register["list_fields"]
+    can_edit = register["slug"] != INCIDENT_REGISTER_SLUG or incident_access(conn, user)[1]
     rows = conn.execute(f"SELECT * FROM {register['table']} ORDER BY id DESC").fetchall()
     body_rows = []
     for row in rows:
         cells = [f"<td>{row['id']}</td>"]
         for field_name, _ in columns:
             cells.append(f"<td>{format_multiline(row[field_name])}</td>")
+        edit_html = (
+            f'<a class="button-link ghost small" href="/admin-docs/registers/{html.escape(register["slug"])}/{row["id"]}/edit">Засах</a>'
+            f'<form method="post" action="/admin-docs/registers/{html.escape(register["slug"])}/{row["id"]}/delete" class="inline-form"'
+            ' onsubmit="return confirm(\'Устгахдаа итгэлтэй байна уу?\')">'
+            '<button type="submit" class="link-button danger">Устгах</button></form>'
+        ) if can_edit else ""
         cells.append(
             f"""
             <td class="table-actions">
               <div class="action-strip">
                 <a class="button-link ghost small" href="/admin-docs/registers/{html.escape(register['slug'])}/{row['id']}">Дэлгэрэнгүй</a>
-                <a class="button-link ghost small" href="/admin-docs/registers/{html.escape(register['slug'])}/{row['id']}/edit">Засах</a>
-                <form method="post" action="/admin-docs/registers/{html.escape(register['slug'])}/{row['id']}/delete" class="inline-form" onsubmit="return confirm(\'Устгахдаа итгэлтэй байна уу?\')">
-                  <button type="submit" class="link-button danger">Устгах</button>
-                </form>
+                {edit_html}
               </div>
             </td>
             """
@@ -5628,7 +8848,7 @@ def attachment_register_list_page(conn, user, register, notice=""):
         <div class="action-strip">
           <a class="button-link ghost" href="/admin-docs">Буцах</a>
           {f'<a class="button-link ghost" href="/admin-docs/registers/{html.escape(register["slug"])}/export.xlsx">Excel татах</a>' if register['slug'] == 'zorchlin-burtgel' and is_superadmin(user) else ''}
-          <a class="button-link" href="/admin-docs/registers/{html.escape(register['slug'])}/new">Мөр нэмэх</a>
+          {f'<a class="button-link" href="/admin-docs/registers/{html.escape(register["slug"])}/new">Мөр нэмэх</a>' if can_edit else ''}
         </div>
       </div>
       <div class="table-wrap">
@@ -5646,7 +8866,7 @@ def attachment_register_list_page(conn, user, register, notice=""):
     return render_page(register["title"], user, body, notice)
 
 
-def attachment_register_detail_page(user, register, entry, notice=""):
+def attachment_register_detail_page(user, register, entry, notice="", can_edit=True):
     rows = [f"""
         <tr>
           <th>№</th>
@@ -5677,7 +8897,7 @@ def attachment_register_detail_page(user, register, entry, notice=""):
         </div>
         <div class="action-strip">
           <a class="button-link ghost" href="/admin-docs/registers/{html.escape(register['slug'])}">Буцах</a>
-          <a class="button-link ghost" href="/admin-docs/registers/{html.escape(register['slug'])}/{entry['id']}/edit">Засах</a>
+          {f'<a class="button-link ghost" href="/admin-docs/registers/{html.escape(register["slug"])}/{entry["id"]}/edit">Засах</a>' if can_edit else ''}
         </div>
       </div>
       <table class="register-detail-table">
@@ -5729,6 +8949,28 @@ def validate_asset_form(form, user, permissions, existing_asset=None):
     return values, ""
 
 
+def insert_asset(conn, department_id, values):
+    """Insert a validated asset (output of validate_asset_form) and return its id."""
+    timestamp = now_utc().isoformat()
+    cur = conn.execute(
+        """
+        INSERT INTO assets (
+            department_id, asset_name, description, asset_type, asset_group_code,
+            has_personal_data, has_sensitive_data, owner, custodian, location,
+            retention_period, confidentiality, integrity_impact,
+            availability_impact, asset_value, asset_category, review_frequency, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            department_id, values["asset_name"], values["description"], values["asset_type"], values["asset_group_code"],
+            values["has_personal_data"], values["has_sensitive_data"], values["owner"], values["custodian"], values["location"],
+            values["retention_period"], values["confidentiality"], values["integrity_impact"], values["availability_impact"],
+            values["asset_value"], values["asset_category"], values.get("review_frequency", ""), timestamp, timestamp,
+        ),
+    )
+    return cur.lastrowid
+
+
 def get_department(conn, slug):
     return conn.execute("SELECT * FROM departments WHERE slug = ?", (slug,)).fetchone()
 
@@ -5764,6 +9006,14 @@ def app(environ, start_response):
         css = (BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
         payload = css.encode("utf-8")
         start_response("200 OK", [("Content-Type", "text/css; charset=utf-8"), ("Content-Length", str(len(payload)))])
+        conn.close()
+        return [payload]
+
+    if path.startswith("/static/") and path[len("/static/"):] in _VULNREG_STATIC:
+        name = path[len("/static/"):]
+        payload = (STATIC_DIR / name).read_bytes()
+        start_response("200 OK", [("Content-Type", _VULNREG_STATIC[name]), ("Content-Length", str(len(payload))),
+                                  ("Cache-Control", "no-cache")])
         conn.close()
         return [payload]
 
@@ -6424,13 +9674,20 @@ def app(environ, start_response):
         return redirect(start_response, "/admin-docs?notice=" + quote("Баримтын ангилал нэмэгдлээ."))
 
     if path.startswith("/admin-docs/registers/"):
-        if not is_admin_or_above(user):
-            conn.close()
-            return forbidden(start_response)
         parts = [unquote(part) for part in path.strip("/").split("/")]
         if len(parts) < 3:
             conn.close()
             return not_found(start_response)
+        if parts[2] == INCIDENT_REGISTER_SLUG:
+            # Incident Register: same rule as /incidents (Superadmin/InfoSec manage, IT Head/CTO read-only).
+            inc_view, inc_manage = incident_access(conn, user)
+            is_write = method != "GET" or parts[-1] in ("new", "edit")
+            if not (inc_manage if is_write else inc_view):
+                conn.close()
+                return forbidden(start_response)
+        elif not is_admin_or_above(user):
+            conn.close()
+            return forbidden(start_response)
         register = get_attachment_register(parts[2])
         if not register:
             conn.close()
@@ -6520,7 +9777,8 @@ def app(environ, start_response):
             if not entry:
                 conn.close()
                 return not_found(start_response)
-            page = attachment_register_detail_page(user, register, entry, qs_value(query, "notice"))
+            page = attachment_register_detail_page(user, register, entry, qs_value(query, "notice"),
+                                                   can_edit=register["slug"] != INCIDENT_REGISTER_SLUG or incident_access(conn, user)[1])
             conn.close()
             return response(start_response, "200 OK", page)
 
@@ -7043,6 +10301,133 @@ def app(environ, start_response):
         conn.close()
         return response(start_response, "200 OK", page)
 
+    if path in ("/registry/vulnerabilities/dashboard", "/registry/vulnerabilities/dashboard/"):
+        _vuln_prepare_conn(conn)
+        user = vuln_user(conn, user)
+        if not vuln_perm(user, "dashboard"):
+            conn.close()
+            return forbidden(start_response)
+        page = vulnerability_dashboard_page(conn, user, qs_value(query, "notice"), qs_value(query, "error"))
+        conn.close()
+        return response(start_response, "200 OK", page)
+
+    if path.startswith("/registry/vulnerabilities") and not path.startswith("/registry/vulnerabilities/dashboard"):
+        _vuln_prepare_conn(conn)
+        vpath = path.rstrip("/")
+        is_api = vpath.startswith("/registry/vulnerabilities/api/")
+
+        def _vdone(result):
+            conn.close()
+            return result
+
+        # Server-side access control: only the roles granted access in Settings (or Superadmin) get in.
+        user = vuln_user(conn, user)
+        if not vuln_perm(user, "access"):
+            if is_api:
+                return _vdone(vuln_json(start_response, 403, {"error": "Эмзэг байдлын бүртгэлд хандах эрхгүй байна."}))
+            return _vdone(forbidden(start_response))
+        vuln_expire_sweep(conn)
+
+        if vpath == "/registry/vulnerabilities" and method == "GET":
+            page = _vulnreg_page(conn, user, VULN_LIST_TEMPLATE, "vulns", {})
+            return _vdone(response(start_response, "200 OK", page))
+
+        if vpath == "/registry/vulnerabilities/export" and method == "GET":
+            if not vuln_perm(user, "export"):
+                return _vdone(forbidden(start_response))
+            fmt = "xlsx" if qs_value(query, "format") == "xlsx" else "csv"
+            payload, ctype, fname = vuln_export(conn, user, query, fmt)
+            return _vdone(send_bytes(start_response, payload, ctype, fname))
+
+        if vpath == "/registry/vulnerabilities/settings" and method == "GET":
+            if not vuln_can_view_settings(user):
+                return _vdone(forbidden(start_response))
+            page = _vulnreg_page(conn, user, VULN_SETTINGS_TEMPLATE, "settings", {})
+            return _vdone(response(start_response, "200 OK", page))
+
+        if vpath == "/registry/vulnerabilities/api/settings" and method == "GET":
+            code, body = vuln_api_settings(conn, user)
+            return _vdone(vuln_json(start_response, code, body))
+
+        if vpath == "/registry/vulnerabilities/api/settings" and method == "POST":
+            code, body = vuln_api_settings_save(conn, user, parse_post(environ))
+            return _vdone(vuln_json(start_response, code, body))
+
+        if vpath == "/registry/vulnerabilities/api/settings/recalc" and method == "POST":
+            code, body = vuln_api_settings_recalc(conn, user, parse_post(environ))
+            return _vdone(vuln_json(start_response, code, body))
+
+        if vpath == "/registry/vulnerabilities/api/list" and method == "GET":
+            return _vdone(vuln_json(start_response, 200, vuln_api_list(conn, user, query)))
+
+        if vpath == "/registry/vulnerabilities/api/options" and method == "GET":
+            return _vdone(vuln_json(start_response, 200, vuln_api_options(conn, user)))
+
+        if vpath == "/registry/vulnerabilities/api/assets/create" and method == "POST":
+            code, body = vuln_api_create_asset(conn, user, parse_post(environ))
+            return _vdone(vuln_json(start_response, code, body))
+
+        if vpath == "/registry/vulnerabilities/api/create" and method == "POST":
+            code, body = vuln_api_create(conn, user, parse_post(environ))
+            return _vdone(vuln_json(start_response, code, body))
+
+        m = re.fullmatch(r"/registry/vulnerabilities/(?:api/)?(\d+)(/.*)?", vpath)
+        if m:
+            row = vuln_get(conn, user, int(m.group(1)))
+            sub = m.group(2) or ""
+            if not row:
+                if is_api:
+                    return _vdone(vuln_json(start_response, 404, {"error": "Бүртгэл олдсонгүй эсвэл харах эрхгүй."}))
+                return _vdone(not_found(start_response))
+            if not is_api:
+                if sub == "" and method == "GET":
+                    page = _vulnreg_page(conn, user, VULN_DETAIL_TEMPLATE, "vulns", {"id": row["id"]})
+                    return _vdone(response(start_response, "200 OK", page))
+                fm = re.fullmatch(r"/files/(\d+)", sub)
+                if fm and method == "GET":
+                    frow = vuln_file_row(conn, row, int(fm.group(1)))
+                    fpath = (VULN_FILES_DIR / frow["stored_name"]).resolve() if frow else None
+                    if not frow or not fpath.is_file() or fpath.parent != VULN_FILES_DIR.resolve():
+                        return _vdone(not_found(start_response))
+                    record_audit(conn, user["id"], "download", "vulnerability", entity_id=row["id"],
+                                 department_id=row["department_id"], details=f"{_vuln_ref(row)} нотлох баримт татав: {frow['original_name']}")
+                    conn.commit()
+                    return _vdone(send_file(start_response, fpath, frow["original_name"]))
+                return _vdone(not_found(start_response))
+            if sub == "" and method == "GET":
+                return _vdone(vuln_json(start_response, 200, vuln_api_detail(conn, user, row)))
+            if method != "POST":
+                return _vdone(vuln_json(start_response, 400, {"error": "Буруу хүсэлт."}))
+            if sub == "/files":
+                # Multipart bodies skip the global CSRF check, so verify the token here.
+                form = parse_multipart(environ)
+                if not hmac.compare_digest(_csrf_token() or "-", form.getfirst("_csrf", "") or ""):
+                    return _vdone(vuln_json(start_response, 403, {"error": "CSRF токен буруу. Хуудсаа дахин ачаална уу."}))
+                code, body = vuln_api_upload(conn, user, row, form)
+                return _vdone(vuln_json(start_response, code, body))
+            form = parse_post(environ)
+            if sub == "/update":
+                code, body = vuln_api_update(conn, user, row, form)
+            elif sub == "/action":
+                code, body = vuln_api_action(conn, user, row, form)
+            elif sub == "/assign":
+                code, body = vuln_api_assign(conn, user, row, form)
+            elif sub == "/comment":
+                code, body = vuln_api_comment(conn, user, row, form)
+            elif sub == "/delete":
+                code, body = vuln_api_delete(conn, user, row, form)
+            else:
+                fm = re.fullmatch(r"/files/(\d+)/delete", sub)
+                frow = vuln_file_row(conn, row, int(fm.group(1))) if fm else None
+                if not frow:
+                    return _vdone(vuln_json(start_response, 404, {"error": "Файл олдсонгүй."}))
+                code, body = vuln_api_file_delete(conn, user, row, frow)
+            return _vdone(vuln_json(start_response, code, body))
+
+        if is_api:
+            return _vdone(vuln_json(start_response, 404, {"error": "Олдсонгүй."}))
+        return _vdone(not_found(start_response))
+
     if path == "/audit":
         if not is_superadmin(user):
             conn.close()
@@ -7088,9 +10473,7 @@ def app(environ, start_response):
         email = (form.get("email") or "").strip().lower()
         display_name = (form.get("display_name") or "").strip()
         dept_id = form.get("department_id") or None
-        new_role = form.get("role") or ROLE_USER
-        if new_role not in (ROLE_USER, ROLE_ADMIN, ROLE_SUPERADMIN):
-            new_role = ROLE_USER
+        new_role, new_vuln_roles = role_level_from_form(form)
         is_admin = 1 if new_role in (ROLE_ADMIN, ROLE_SUPERADMIN) else 0
         if not email or "@" not in email:
             page = render_page("Хэрэглэгч нэмэх", user, user_create_page(all_departments, error="Зөв и-мэйл хаяг оруулна уу.", values=form))
@@ -7117,6 +10500,14 @@ def app(environ, start_response):
                 (new_user_id, dept_id, timestamp, timestamp),
             )
         record_audit(conn, user["id"], "create", "user", entity_id=new_user_id, target_user_id=new_user_id, details=f"{email} хэрэглэгч үүслээ.")
+        if new_vuln_roles:
+            ensure_vulnerabilities_table(conn)  # adds users.vuln_role (the service does not run ensure_database())
+            conn.execute("UPDATE users SET vuln_role = ?, is_it_head = ? WHERE id = ?",
+                         (vuln_roles_value(new_vuln_roles), 1 if "it_head" in new_vuln_roles else 0, new_user_id))
+            new_row = conn.execute("SELECT * FROM users WHERE id = ?", (new_user_id,)).fetchone()
+            _vuln_config_log(conn, user, f"user_role:{new_user_id}", f"Эрх — {_vuln_user_label(new_row)}",
+                             VULN_ROLE_LABELS[""], vuln_roles_text(new_vuln_roles),
+                             "Шинэ хэрэглэгч үүсгэх үед олгосон (Хэрэглэгчид → Хэрэглэгч нэмэх).")
         conn.execute("UPDATE users SET last_invited_at = ? WHERE id = ?", (timestamp, new_user_id))
         send_invitation_email(conn, new_user_id, email, display_name)
         conn.commit()
@@ -7127,6 +10518,7 @@ def app(environ, start_response):
         if not can_manage_users(user):
             conn.close()
             return forbidden(start_response)
+        ensure_vulnerabilities_table(conn)  # adds users.vuln_role (the service does not run ensure_database())
         target_id = path.strip("/").split("/")[1]
         target_user = get_user_with_department(conn, target_id)
         if not target_user:
@@ -7136,16 +10528,18 @@ def app(environ, start_response):
         dept_perms = get_user_dept_perms(conn, target_user["id"])
         label = target_user["display_name"] or target_user["email"] or target_user["username"]
         if method == "GET":
-            page = render_page(f"{label} — Засах", user, user_edit_page(conn, target_user, all_departments, dept_perms))
+            page = render_page(f"{label} — Засах", user, user_edit_page(conn, target_user, all_departments, dept_perms,
+                                                                        lock_sys=target_user["id"] == user["id"]))
             conn.close()
             return response(start_response, "200 OK", page)
         form = parse_post(environ)
         email = (form.get("email") or "").strip().lower()
         display_name = (form.get("display_name") or "").strip()
         dept_id = form.get("department_id") or None
-        new_role = form.get("role") or ROLE_USER
-        if new_role not in (ROLE_USER, ROLE_ADMIN, ROLE_SUPERADMIN):
-            new_role = ROLE_USER
+        new_role, new_vuln_roles = role_level_from_form(form)
+        role_reason = (form.get("role_reason") or "").strip()[:2000]
+        old_role = user_role(target_user)
+        old_vuln_roles = vuln_roles_of(target_user)
         is_admin = 1 if new_role in (ROLE_ADMIN, ROLE_SUPERADMIN) else 0
         is_active = 1 if form.get("is_active") == "1" else 0
         if not email or "@" not in email:
@@ -7176,6 +10570,10 @@ def app(environ, start_response):
                 "can_update": form.get(f"update_{d['id']}") == "1",
             }
         save_user_dept_perms(conn, target_user["id"], new_perms)
+        if new_vuln_roles != old_vuln_roles:
+            conn.execute("UPDATE users SET vuln_role = ?, is_it_head = ? WHERE id = ?",
+                         (vuln_roles_value(new_vuln_roles), 1 if "it_head" in new_vuln_roles else 0, target_user["id"]))
+        log_role_change(conn, user, target_user, old_role, new_role, old_vuln_roles, new_vuln_roles, role_reason)
         record_audit(conn, user["id"], "update", "user", entity_id=target_user["id"], target_user_id=target_user["id"], details=f"{email} хэрэглэгчийн мэдээлэл шинэчлэгдлээ.")
         conn.commit()
         conn.close()
@@ -7402,24 +10800,7 @@ def app(environ, start_response):
                 page = render_page("Шинэ хөрөнгө", user, render_asset_form(path, user, department, form, permissions, error=error))
                 conn.close()
                 return response(start_response, "400 Bad Request", page)
-            timestamp = now_utc().isoformat()
-            conn.execute(
-                """
-                INSERT INTO assets (
-                    department_id, asset_name, description, asset_type, asset_group_code,
-                    has_personal_data, has_sensitive_data, owner, custodian, location,
-                    retention_period, confidentiality, integrity_impact,
-                    availability_impact, asset_value, asset_category, review_frequency, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    department["id"], values["asset_name"], values["description"], values["asset_type"], values["asset_group_code"],
-                    values["has_personal_data"], values["has_sensitive_data"], values["owner"], values["custodian"], values["location"],
-                    values["retention_period"], values["confidentiality"], values["integrity_impact"], values["availability_impact"],
-                    values["asset_value"], values["asset_category"], values.get("review_frequency", ""), timestamp, timestamp,
-                ),
-            )
-            asset_id = conn.execute("SELECT last_insert_rowid() AS id").fetchone()["id"]
+            asset_id = insert_asset(conn, department["id"], values)
             record_audit(conn, user["id"], "create", "asset", entity_id=asset_id, department_id=department["id"], details=f"{values['asset_name']} хөрөнгө үүслээ.")
             conn.commit()
             conn.close()

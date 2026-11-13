@@ -1,0 +1,675 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Эмзэг байдал | VulnReg</title>
+<link rel="icon" href="/favicon.ico" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/vulnreg.css">
+<style>
+/* KPI cards */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.kpi {
+  padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); font: inherit; color: inherit; position: relative;
+}
+.kpi:hover { border-color: var(--border-strong); box-shadow: 0 2px 8px rgba(15, 27, 45, .06); }
+.kpi[aria-pressed="true"] { border-color: var(--navy); box-shadow: inset 0 0 0 1px var(--navy); }
+.kpi-label { color: var(--muted); font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+.kpi-value { font-size: 32px; font-weight: 700; line-height: 1.15; letter-spacing: -.5px; min-height: 37px; }
+.kpi-sub { font-size: 12.5px; color: var(--muted); min-height: 19px; }
+.kpi .dot.navy { background: var(--navy); } .kpi .dot.blue { background: #1D4ED8; }
+.t-red { color: var(--warn-red); } .t-orange { color: var(--warn-orange); }
+.kpi .sk { height: 28px; width: 56px; margin: 4px 0 5px; }
+
+/* Filters */
+.filters { padding: 14px 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; }
+.f-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.search { position: relative; flex: 1 1 300px; min-width: 220px; }
+.search .ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); width: 18px; height: 18px; pointer-events: none; }
+.search input { width: 100%; height: 44px; padding: 0 12px 0 40px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); font: inherit; color: var(--text); }
+.search input:focus { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
+.more-panel { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.more-panel .field > label { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.range { display: flex; align-items: center; gap: 6px; }
+.range input { min-width: 0; }
+.range span { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chips:empty { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px 0 12px; border-radius: 999px; background: #EEF2F8; border: 1px solid #DCE3EE; font-size: 12.5px; font-weight: 500; }
+.chip b { font-weight: 600; }
+.chip button { width: 26px; height: 26px; border: 0; border-radius: 50%; background: transparent; cursor: pointer; display: grid; place-items: center; color: var(--muted); }
+.chip button:hover { background: #DCE3EE; color: var(--text); }
+.chip button .ico { width: 14px; height: 14px; }
+
+/* Table */
+.panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.panel-head h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+.panel-head h2 small { color: var(--muted); font-size: 13px; font-weight: 500; }
+.table-scroll { overflow: auto; max-height: calc(100vh - 160px); min-height: 200px; -webkit-overflow-scrolling: touch; position: relative; }
+.table-scroll[aria-busy="true"] tbody { opacity: .5; transition: opacity .15s; }
+table.vt { width: 100%; min-width: 1120px; border-collapse: separate; border-spacing: 0; }
+.vt th {
+  position: sticky; top: 0; z-index: 2; text-align: left; font-size: 12.5px; font-weight: 600; color: #334155;
+  padding: 0 10px; height: 44px; background: #F1F4F8; border-bottom: 1px solid var(--border-strong); white-space: nowrap;
+}
+.vt th button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; height: 44px; }
+.vt th button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: 4px; }
+.vt th .sort-ico { width: 14px; height: 14px; color: #94A3B8; }
+.vt th[aria-sort="ascending"] .sort-ico, .vt th[aria-sort="descending"] .sort-ico { color: var(--navy); }
+.vt th[aria-sort="ascending"] .sort-ico { transform: rotate(180deg); }
+.vt td { padding: 12px 10px; border-bottom: 1px solid var(--border); font-size: 13.5px; vertical-align: middle; }
+.vt tbody tr { cursor: pointer; }
+.vt tbody tr:hover td { background: #F8FAFC; }
+.vt tbody tr.sk-row { cursor: default; }
+.vt th:first-child, .vt td:first-child { padding-left: 16px; }
+.vt th:last-child, .vt td:last-child { padding-right: 12px; text-align: right; }
+.ref-link { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; text-decoration: none; }
+.ref-link:hover { text-decoration: underline; }
+.trunc { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trunc.sm { max-width: 150px; }
+.v-title { font-weight: 600; }
+.due-cell { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+.nil { color: #94A3B8; }
+.row-act { width: 36px; height: 36px; }
+
+/* Cards (mobile) */
+.cards { display: none; list-style: none; margin: 0; padding: 8px; flex-direction: column; gap: 8px; }
+.vcard { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: var(--card); text-decoration: none; color: inherit; }
+.vcard:active { background: #F8FAFC; }
+.vcard-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.vcard h3 { margin: 0; font-size: 14.5px; font-weight: 600; line-height: 1.35; }
+.vcard-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--muted); align-items: center; }
+
+/* Pagination */
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+.pages { display: flex; gap: 4px; align-items: center; }
+.pages button { min-width: 36px; height: 36px; padding: 0 8px; border: 1px solid var(--border); background: var(--card); border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text); }
+.pages button:hover:not([disabled]) { background: var(--bg); }
+.pages button[aria-current="page"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+.pages button[disabled] { opacity: .45; cursor: default; }
+.pages .gap { padding: 0 4px; }
+.pages .ico { width: 16px; height: 16px; }
+
+@media (max-width: 1200px) {
+  .more-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 1024px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.more-btn.icon-only { position: relative; width: 44px; min-width: 44px; padding: 0; justify-content: center; flex: none; }
+.more-btn.icon-only .count-badge { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; font-size: 11px; padding: 0 5px; }
+@media (max-width: 760px) {
+  .table-scroll { display: none; }
+  .cards { display: flex; }
+  .f-row .clear-btn { flex: none; }
+  .more-panel { grid-template-columns: 1fr; }
+  .search { flex: 1 1 0; min-width: 0; }
+  .kpis { gap: 10px; }
+  .kpi { padding: 12px 14px; }
+  .kpi-value { font-size: 26px; min-height: 30px; }
+  .actions { width: 100%; }
+  .actions > * { flex: 1; }
+  .pager { justify-content: center; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-bug" viewBox="0 0 24 24"><path d="M12 9a4 4 0 0 1 4 4v3a4 4 0 0 1-8 0v-3a4 4 0 0 1 4-4z"/><path d="M9 7l1.5 2M15 7l-1.5 2M4 13h4M16 13h4M5 19l3-2M19 19l-3-2M5 8l3 2M19 8l-3 2"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 18l-6-6 6-6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 19h14"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></symbol>
+  <symbol id="i-sheet" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+</svg>
+
+<div class="shell collapsed" id="shell">
+  <aside class="sidebar" aria-label="Үндсэн цэс">
+    <a class="sb-brand" href="/registry/vulnerabilities" aria-label="VulnReg — Эмзэг байдлын бүртгэл">
+      <span class="sb-logo"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg></span>
+      <span class="sb-brand-text"><strong>VulnReg</strong><span>Эмзэг байдлын бүртгэл</span></span>
+    </a>
+    <nav class="sb-nav">{{SIDEBAR}}</nav>
+    <div class="sb-foot">
+      <div class="sb-user" data-tip="{{USER_NAME}} · {{USER_ROLE}}" tabindex="-1">
+        <span class="sb-avatar" aria-hidden="true">{{USER_INITIALS}}</span>
+        <span class="sb-user-text"><strong>{{USER_NAME}}</strong><span>{{USER_ROLE}}</span></span>
+      </div>
+      <a class="sb-btn" href="/dashboard" data-tip="МАБ Платформ руу буцах" aria-label="МАБ Платформ руу буцах"><svg class="ico" aria-hidden="true"><use href="#i-back"/></svg><span class="sb-btn-text">МАБ Платформ руу буцах</span></a>
+    </div>
+  </aside>
+
+  <main class="content" id="main">
+    <header class="topbar">
+      <div class="page-head">
+        <h1>Эмзэг байдал</h1>
+        <p id="page-desc">Байгууллагын эмзэг байдлын бүртгэл, хяналт, засварын явц.</p>
+      </div>
+      <div class="actions">
+        <div class="menu-wrap" id="export-wrap" hidden>
+          <button type="button" class="btn-secondary" id="export-btn" aria-label="Экспорт" title="Экспорт"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><svg class="ico" aria-hidden="true" style="width:16px;height:16px"><use href="#i-chevron-down"/></svg></button>
+          <div class="menu" id="export-menu" role="menu" hidden>
+            <a role="menuitem" href="#" data-export="xlsx"><svg class="ico" aria-hidden="true"><use href="#i-sheet"/></svg>Excel (.xlsx)</a>
+            <a role="menuitem" href="#" data-export="csv"><svg class="ico" aria-hidden="true"><use href="#i-file"/></svg>CSV (.csv)</a>
+          </div>
+        </div>
+        <button type="button" class="btn-primary" id="reg-open" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Эмзэг байдал бүртгэх</button>
+      </div>
+    </header>
+
+    <div class="view-tabs" role="tablist" aria-label="Харагдац">
+      <button type="button" class="view-tab" role="tab" id="view-todo" data-view="todo" aria-selected="false">Миний хийх ажил <span class="view-count" id="todo-count"></span></button>
+      <button type="button" class="view-tab" role="tab" id="view-all" data-view="all" aria-selected="false">Бүгд</button>
+    </div>
+
+    <section class="kpis" aria-label="Гол үзүүлэлтүүд">
+      <button type="button" class="kpi" data-kpi="total" aria-pressed="false">
+        <span class="kpi-label"><span class="dot navy" aria-hidden="true"></span>Нийт бүртгэл</span>
+        <span class="kpi-value" data-v="total"><span class="sk"></span></span>
+        <span class="kpi-sub" data-s="total"></span>
+      </button>
+      <button type="button" class="kpi" data-kpi="open" aria-pressed="false">
+        <span class="kpi-label"><span class="dot blue" aria-hidden="true"></span>Нээлттэй</span>
+        <span class="kpi-value" data-v="open"><span class="sk"></span></span>
+        <span class="kpi-sub" data-s="open"></span>
+      </button>
+      <button type="button" class="kpi" data-kpi="critical" aria-pressed="false">
+        <span class="kpi-label"><span class="dot critical" aria-hidden="true"></span>Critical (нээлттэй)</span>
+        <span class="kpi-value" data-v="critical"><span class="sk"></span></span>
+        <span class="kpi-sub" data-s="critical"></span>
+      </button>
+      <button type="button" class="kpi" data-kpi="overdue" aria-pressed="false">
+        <span class="kpi-label"><span class="dot high" aria-hidden="true"></span>Хугацаа хэтэрсэн</span>
+        <span class="kpi-value" data-v="overdue"><span class="sk"></span></span>
+        <span class="kpi-sub" data-s="overdue"></span>
+      </button>
+    </section>
+
+    <section class="card filters" aria-label="Хайлт ба шүүлтүүр">
+      <div class="f-row">
+        <label class="search" for="f-q">
+          <span class="sr-only">Хайх</span>
+          <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+          <input id="f-q" type="search" placeholder="ID, эмзэг байдлын нэр, CVE эсвэл хөрөнгөөр хайх…" autocomplete="off" maxlength="200">
+        </label>
+        <button type="button" class="btn-secondary more-btn icon-only" id="more-btn" aria-expanded="false" aria-controls="more-panel" aria-label="Шүүлтүүр" title="Шүүлтүүр"><svg class="ico" aria-hidden="true"><use href="#i-filter"/></svg><span class="count-badge" id="more-count" hidden></span></button>
+        <button type="button" class="btn-ghost clear-btn" id="clear-btn" hidden>Цэвэрлэх</button>
+      </div>
+      <div class="more-panel" id="more-panel" hidden>
+        <div class="field"><label for="f-sev">Түвшин</label><select id="f-sev">
+          <option value="">Бүгд</option>
+          <option value="critical">Critical</option><option value="high">High</option>
+          <option value="medium">Medium</option><option value="low">Low</option>
+        </select></div>
+        <div class="field"><label for="f-status">Төлөв</label><select id="f-status"><option value="">Бүгд</option><option value="open">Нээлттэй (идэвхтэй бүх)</option></select></div>
+        <div class="field"><label for="f-deadline">Хугацааны төлөв</label><select id="f-deadline">
+          <option value="">Бүгд</option>
+          <option value="overdue">Хугацаа хэтэрсэн</option><option value="soon">Хугацаа дөхсөн</option>
+          <option value="ontrack">Хугацаандаа</option><option value="none">Хугацаагүй</option>
+        </select></div>
+        <div class="field" id="f-assignee-wrap"><label for="f-assignee">Хариуцагч</label><select id="f-assignee"><option value="">Бүгд</option><option value="me">Би</option><option value="none">Томилоогүй</option></select></div>
+      </div>
+      <div class="chips" id="chips" aria-label="Идэвхтэй шүүлтүүр"></div>
+    </section>
+
+    <section class="card" aria-labelledby="tbl-title">
+      <div class="panel-head">
+        <h2 id="tbl-title">Бүртгэлүүд <small id="tbl-total" aria-live="polite"></small></h2>
+      </div>
+      <div class="table-scroll" id="table-scroll" tabindex="0" aria-label="Эмзэг байдлын хүснэгт">
+        <table class="vt">
+          <caption class="sr-only">Эмзэг байдлын бүртгэл</caption>
+          <thead><tr id="thead-row"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <ul class="cards" id="cards" aria-label="Эмзэг байдлын жагсаалт"></ul>
+      <div id="state" hidden></div>
+      <nav class="pager" id="pager" aria-label="Хуудаслалт" hidden>
+        <span id="pager-info"></span>
+        <div class="pages" id="pages"></div>
+      </nav>
+    </section>
+  </main>
+</div>
+
+<div class="menu fixed" id="row-menu" role="menu" hidden>
+  <a role="menuitem" href="#" data-row-act="view"><svg class="ico" aria-hidden="true"><use href="#i-eye"/></svg>Дэлгэрэнгүй харах</a>
+  <a role="menuitem" href="#" data-row-act="edit"><svg class="ico" aria-hidden="true"><use href="#i-edit"/></svg>Засах</a>
+</div>
+
+<script>window.VR_BOOT = {{BOOT_JSON}};</script>
+<script src="/static/vulnreg.js"></script>
+<script>
+(function () {
+  "use strict";
+  var B = VR.boot, esc = VR.esc, BASE = VR.BASE;
+  var $ = function (id) { return document.getElementById(id); };
+  // ?new=1 (e.g. the dashboard's "register" button) opens the registration form; captured before the URL is rewritten.
+  var openNewOnLoad = /[?&]new=1(&|$)/.test(location.search);
+  VR.initShell();
+
+  var FILTER_KEYS = ["q", "sev", "status", "deadline", "assignee"];
+  var MORE_KEYS = ["sev", "status", "deadline", "assignee"];  // the filters inside the panel (badge count on the filter icon)
+  var COLS = [
+    { key: "ref", label: "ID", sort: "ref" },
+    { key: "title", label: "Эмзэг байдлын нэр", sort: "title" },
+    { key: "cve", label: "CVE", sort: "cve" },
+    { key: "asset", label: "Хөрөнгө", sort: "asset" },
+    { key: "dept", label: "Хэлтэс", sort: "dept" },
+    { key: "severity", label: "Түвшин", sort: "severity" },
+    { key: "status", label: "Төлөв", sort: "status" },
+    { key: "created", label: "Бүртгэсэн огноо", sort: "created" },
+    { key: "due", label: "Засварлах хугацаа", sort: "due" },
+    { key: "assignee", label: "Хариуцагч", sort: "assignee" },
+    { key: "act", label: "Үйлдэл" }
+  ];
+  var st = { f: {}, sort: "", dir: "", page: 1, view: "all" };
+  var options = null, data = null, seq = 0;
+
+  // ---- URL state ----
+  (function readUrl() {
+    var p = new URLSearchParams(location.search);
+    FILTER_KEYS.forEach(function (k) { var v = p.get(k); if (v) st.f[k] = v; });
+    var view = p.get("view");
+    if (view === "mine" || view === "approvals") view = "todo";  // old bookmarks / menu links
+    // «Миний хийх ажил» opens by default when something is waiting on this user and no other filter was asked for.
+    st.view = view === "todo" || view === "all" ? view : (!Object.keys(st.f).length && B.todoCount > 0 ? "todo" : "all");
+    st.sort = p.get("sort") || ""; st.dir = p.get("dir") || "";
+    st.page = Math.max(1, parseInt(p.get("page"), 10) || 1);
+  })();
+  function filterQs() {
+    var p = new URLSearchParams();
+    p.set("view", st.view);
+    FILTER_KEYS.forEach(function (k) { if (st.f[k]) p.set(k, st.f[k]); });
+    if (st.sort) { p.set("sort", st.sort); p.set("dir", st.dir || "asc"); }
+    return p;
+  }
+  function fullQs() {
+    var p = filterQs();
+    if (st.page > 1) p.set("page", st.page);
+    return p;
+  }
+  function writeUrl() {
+    var qs = fullQs().toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : ""));
+    try { sessionStorage.setItem("vulnreg-list-url", location.pathname + location.search); } catch (e) {}
+  }
+
+  // ---- Header actions ----
+  if (B.canExport) {
+    $("export-wrap").hidden = false;
+    VR.menu($("export-btn"), $("export-menu"));
+    $("export-menu").addEventListener("click", function (e) {
+      var a = e.target.closest("[data-export]");
+      if (!a) return;
+      e.preventDefault();
+      var p = filterQs(); p.set("format", a.getAttribute("data-export"));
+      location.href = BASE + "/export?" + p.toString();
+    });
+  }
+  function openRegister() {
+    VR.openVulnForm({ onSaved: function (r) {
+      VR.toast(r.message || "Амжилттай бүртгэгдлээ.", "ok", ' <a href="' + BASE + "/" + r.id + '">Харах</a>');
+      st.page = 1; load();
+    } });
+  }
+  if (B.canManage) { $("reg-open").hidden = false; $("reg-open").addEventListener("click", openRegister); }
+  if (B.canManage && openNewOnLoad) openRegister();
+  if (!B.canManage && !B.isItHead) $("f-assignee-wrap").hidden = true;
+
+  // ---- Table header ----
+  $("thead-row").innerHTML = COLS.map(function (c) {
+    if (!c.sort) return '<th scope="col"><span class="sr-only">' + esc(c.label) + "</span></th>";
+    return '<th scope="col" data-col="' + c.sort + '"><button type="button" data-sort="' + c.sort + '">' + esc(c.label) +
+      '<svg class="ico sort-ico" aria-hidden="true"><use href="#i-sort"/></svg></button></th>';
+  }).join("");
+  $("thead-row").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-sort]");
+    if (!b) return;
+    var k = b.getAttribute("data-sort");
+    if (st.sort === k) st.dir = st.dir === "asc" ? "desc" : "asc";
+    else { st.sort = k; st.dir = (k === "created" || k === "ref") ? "desc" : "asc"; }
+    st.page = 1; load();
+  });
+  function renderSortState() {
+    Array.prototype.forEach.call(document.querySelectorAll("th[data-col]"), function (th) {
+      var k = th.getAttribute("data-col");
+      if (k === st.sort) th.setAttribute("aria-sort", st.dir === "asc" ? "ascending" : "descending");
+      else th.removeAttribute("aria-sort");
+    });
+  }
+
+  // ---- Filters UI ----
+  var inputs = { q: $("f-q"), sev: $("f-sev"), status: $("f-status"), deadline: $("f-deadline"),
+    assignee: $("f-assignee") };
+  Object.keys(VR.STATUS).forEach(function (k) {
+    var o = document.createElement("option"); o.value = k; o.textContent = VR.STATUS[k]; $("f-status").appendChild(o);
+  });
+  function syncInputs() {
+    Object.keys(inputs).forEach(function (k) {
+      var el = inputs[k], v = st.f[k] || "";
+      if (el.tagName === "SELECT" && v && !el.querySelector('option[value="' + CSS.escape(v) + '"]')) {
+        var o = document.createElement("option"); o.value = v; o.textContent = "#" + v; el.appendChild(o);
+      }
+      if (el !== document.activeElement || el.tagName === "SELECT") el.value = v;
+    });
+    var more = MORE_KEYS.filter(function (k) { return st.f[k]; }).length;
+    $("more-count").hidden = !more; $("more-count").textContent = more;
+    $("clear-btn").hidden = !Object.keys(st.f).length;
+  }
+  function setFilter(k, v) {
+    if (v) st.f[k] = v; else delete st.f[k];
+    st.page = 1; load();
+  }
+  ["sev", "status", "deadline", "assignee"].forEach(function (k) {
+    inputs[k].addEventListener("change", function () { setFilter(k, inputs[k].value); });
+  });
+  var qTimer;
+  inputs.q.addEventListener("input", function () {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(function () { setFilter("q", inputs.q.value.trim()); }, 300);
+  });
+  inputs.q.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { clearTimeout(qTimer); setFilter("q", inputs.q.value.trim()); }
+  });
+  function toggleMore(open) {
+    $("more-panel").hidden = !open;
+    $("more-btn").setAttribute("aria-expanded", open ? "true" : "false");
+  }
+  $("more-btn").addEventListener("click", function () { toggleMore($("more-panel").hidden); });
+  function clearAll() { st.f = {}; st.page = 1; load(); }
+  $("clear-btn").addEventListener("click", clearAll);
+
+  // Chips
+  function chipLabel(k, v) {
+    var sel = function (el) { var o = el.querySelector('option[value="' + CSS.escape(v) + '"]'); return o ? o.textContent : v; };
+    switch (k) {
+      case "q": return ["Хайлт", "“" + v + "”"];
+      case "sev": return ["Түвшин", VR.SEV[v] || v];
+      case "status": return ["Төлөв", v === "open" ? "Нээлттэй" : (VR.STATUS[v] || v)];
+      case "deadline": return ["Хугацаа", VR.DEADLINE[v] || v];
+      case "assignee": return ["Хариуцагч", v === "me" ? "Би" : v === "none" ? "Томилоогүй" : sel(inputs.assignee)];
+    }
+    return [k, v];
+  }
+  function renderChips() {
+    $("chips").innerHTML = FILTER_KEYS.filter(function (k) { return st.f[k]; }).map(function (k) {
+      var l = chipLabel(k, st.f[k]);
+      return '<span class="chip">' + esc(l[0]) + ": <b>" + esc(l[1]) + '</b><button type="button" data-unset="' + k +
+        '" aria-label="' + esc(l[0] + " шүүлтүүрийг арилгах") + '"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></span>';
+    }).join("");
+  }
+  $("chips").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-unset]");
+    if (b) setFilter(b.getAttribute("data-unset"), "");
+  });
+
+  // KPI cards
+  var KPI_FILTERS = { total: {}, open: { status: "open" }, critical: { sev: "critical", status: "open" }, overdue: { deadline: "overdue" } };
+  function sameFilters(a) {
+    var ka = Object.keys(a), kb = Object.keys(st.f);
+    return ka.length === kb.length && ka.every(function (k) { return st.f[k] === a[k]; });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[data-kpi]"), function (b) {
+    b.addEventListener("click", function () {
+      var f = KPI_FILTERS[b.getAttribute("data-kpi")];
+      st.f = JSON.parse(JSON.stringify(f)); st.page = 1; load();
+    });
+  });
+  function renderKpis(k) {
+    var set = function (key, v, sub, cls) {
+      document.querySelector('[data-v="' + key + '"]').textContent = v;
+      var s = document.querySelector('[data-s="' + key + '"]');
+      s.textContent = sub; s.className = "kpi-sub" + (cls ? " " + cls : "");
+    };
+    set("total", k.total, k.closed + " хаагдсан");
+    set("open", k.open, k.working + " үнэлгээ / засвар / шалгалтад");
+    set("critical", k.critical, k.critical_overdue ? k.critical_overdue + " нь хугацаа хэтэрсэн" : (k.high + " High нээлттэй"), k.critical_overdue ? "t-red" : "");
+    set("overdue", k.overdue, k.soon + " нь " + B.soonDays + " хоногт дуусна", k.soon ? "t-orange" : "");
+    document.querySelector('[data-v="overdue"]').className = "kpi-value" + (k.overdue ? " t-red" : "");
+    Array.prototype.forEach.call(document.querySelectorAll("[data-kpi]"), function (b) {
+      var key = b.getAttribute("data-kpi");
+      b.setAttribute("aria-pressed", key !== "total" && sameFilters(KPI_FILTERS[key]) ? "true" : "false");
+    });
+  }
+
+  // ---- Rendering ----
+  function cellNil() { return '<span class="nil">—</span>'; }
+  function rowHtml(r) {
+    var href = BASE + "/" + r.id;
+    var asset = r.asset ? '<span class="trunc sm" title="' + esc(r.asset.name + (r.asset.id ? " (#" + r.asset.id + ")" : "")) + '">' + esc(r.asset.name) +
+      (r.asset.id ? ' <span class="muted">#' + r.asset.id + "</span>" : "") + "</span>" : cellNil();
+    var due = r.due ? '<div class="due-cell"><span class="mono">' + esc(r.due) + "</span>" + VR.deadlineHtml(r.deadline) + "</div>" :
+      VR.deadlineHtml(r.deadline);
+    return '<tr data-id="' + r.id + '">' +
+      '<td><a class="ref-link" href="' + href + '">' + esc(r.ref) + "</a></td>" +
+      '<td><span class="trunc v-title" title="' + esc(r.title) + '">' + esc(r.title) + "</span></td>" +
+      "<td>" + (r.cve ? '<span class="mono">' + esc(r.cve) + "</span>" : cellNil()) + "</td>" +
+      "<td>" + asset + "</td>" +
+      "<td>" + (r.dept ? '<span class="trunc sm" title="' + esc(r.dept) + '">' + esc(r.dept) + "</span>" : cellNil()) + "</td>" +
+      "<td>" + VR.sevHtml(r.severity, r.cvss) + "</td>" +
+      "<td>" + VR.statusHtml(r.status) + "</td>" +
+      '<td><span class="mono">' + esc(r.created) + "</span></td>" +
+      "<td>" + due + "</td>" +
+      "<td>" + (r.assignee ? '<span class="trunc sm" title="' + esc(r.assignee.name) + '">' + esc(r.assignee.name) + "</span>" : '<span class="nil">Томилоогүй</span>') + "</td>" +
+      '<td><button type="button" class="icon-btn plain row-act" data-menu="' + r.id + '" aria-label="' + esc(r.ref + " — үйлдэл") + '" aria-haspopup="menu"><svg class="ico" aria-hidden="true"><use href="#i-more"/></svg></button></td></tr>';
+  }
+  function cardHtml(r) {
+    return '<li><a class="vcard" href="' + BASE + "/" + r.id + '">' +
+      '<div class="vcard-top"><span class="mono" style="font-weight:600">' + esc(r.ref) + "</span>" + VR.statusHtml(r.status) + "</div>" +
+      "<h3>" + esc(r.title) + "</h3>" +
+      '<div class="vcard-meta">' + VR.sevHtml(r.severity, r.cvss) + (r.cve ? '<span class="mono">' + esc(r.cve) + "</span>" : "") +
+      (r.asset ? "<span>" + esc(r.asset.name) + "</span>" : "") + "</div>" +
+      '<div class="vcard-meta">' + (r.due ? '<span class="mono">' + esc(r.due) + "</span>" : "") + VR.deadlineHtml(r.deadline) +
+      "<span>" + (r.assignee ? esc(r.assignee.name) : "Томилоогүй") + "</span></div></a></li>";
+  }
+  function skeleton() {
+    var w = [70, 220, 90, 120, 100, 70, 90, 80, 90, 90, 20];
+    var rows = "";
+    for (var i = 0; i < 8; i++) rows += '<tr class="sk-row">' + w.map(function (x) { return '<td><span class="sk" style="width:' + x + 'px"></span></td>'; }).join("") + "</tr>";
+    $("tbody").innerHTML = rows;
+    $("cards").innerHTML = '<li class="vcard"><span class="sk" style="width:40%"></span><span class="sk" style="width:90%"></span><span class="sk" style="width:60%"></span></li>'.repeat(4);
+  }
+  function showState(kind) {
+    var s = $("state"), html = "";
+    var hasFilters = Object.keys(st.f).length > 0;
+    if (kind === "error") {
+      html = '<div class="state err"><span class="state-ico"><svg class="ico" aria-hidden="true"><use href="#i-alert"/></svg></span>' +
+        "<h3>Мэдээлэл ачаалж чадсангүй</h3><p>" + esc(data && data.error || "Сервертэй холбогдоход алдаа гарлаа.") + "</p>" +
+        '<div class="actions"><button type="button" class="btn-secondary" data-retry><svg class="ico" aria-hidden="true"><use href="#i-refresh"/></svg>Дахин оролдох</button></div></div>';
+    } else if (kind === "noresults" && st.view === "todo" && !hasFilters) {
+      html = '<div class="state"><span class="state-ico"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span>' +
+        "<h3>Танд хийх ажил алга</h3><p>Таны үйлдэл шаардсан бүртгэл одоогоор алга. Бүх бүртгэлийг «Бүгд» хэсгээс харна уу.</p>" +
+        '<div class="actions"><button type="button" class="btn-secondary" data-view-all>Бүгдийг харах</button></div></div>';
+    } else if (kind === "noresults" && hasFilters) {
+      html = '<div class="state"><span class="state-ico"><svg class="ico" aria-hidden="true"><use href="#i-search"/></svg></span>' +
+        "<h3>Бүртгэл олдсонгүй</h3><p>Хайлт, шүүлтүүрт тохирох эмзэг байдал алга. Шүүлтүүрээ өөрчлөх эсвэл цэвэрлэж үзнэ үү.</p>" +
+        '<div class="actions"><button type="button" class="btn-secondary" data-clear>Шүүлтүүр цэвэрлэх</button></div></div>';
+    } else if (kind === "noresults") {
+      html = '<div class="state"><span class="state-ico"><svg class="ico" aria-hidden="true"><use href="#i-bug"/></svg></span>' +
+        (B.canManage
+          ? "<h3>Одоогоор эмзэг байдал бүртгэгдээгүй</h3><p>Илрүүлсэн эмзэг байдлыг бүртгэж, хариуцагч томилон засварын явцыг эндээс хянана.</p>" +
+            '<div class="actions"><button type="button" class="btn-primary" data-register><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Эмзэг байдал бүртгэх</button></div>'
+          : "<h3>Танд хамаарах эмзэг байдал алга</h3><p>Танд инженерээр томилогдсон эсвэл таны шийдвэр шаардсан бүртгэл энд харагдана.</p>") + "</div>";
+    }
+    s.innerHTML = html; s.hidden = !html;
+  }
+  $("state").addEventListener("click", function (e) {
+    if (e.target.closest("[data-retry]")) load();
+    if (e.target.closest("[data-view-all]")) setView("all");
+    if (e.target.closest("[data-clear]")) clearAll();
+    if (e.target.closest("[data-register]")) openRegister();
+  });
+  function pageList(page, pages) {
+    var out = [], i;
+    if (pages <= 7) { for (i = 1; i <= pages; i++) out.push(i); return out; }
+    out.push(1);
+    if (page > 3) out.push("…");
+    for (i = Math.max(2, page - 1); i <= Math.min(pages - 1, page + 1); i++) out.push(i);
+    if (page < pages - 2) out.push("…");
+    out.push(pages);
+    return out;
+  }
+  function renderPager(d) {
+    $("pager").hidden = !d.total;
+    if (!d.total) return;
+    var from = (d.page - 1) * d.per + 1, to = Math.min(d.total, d.page * d.per);
+    $("pager-info").textContent = from + "–" + to + " / нийт " + d.total;
+    $("pages").innerHTML =
+      '<button type="button" data-page="' + (d.page - 1) + '"' + (d.page <= 1 ? " disabled" : "") + ' aria-label="Өмнөх хуудас"><svg class="ico" aria-hidden="true"><use href="#i-chevron-left"/></svg></button>' +
+      pageList(d.page, d.pages).map(function (p) {
+        return p === "…" ? '<span class="gap">…</span>' :
+          '<button type="button" data-page="' + p + '"' + (p === d.page ? ' aria-current="page"' : "") + ' aria-label="' + p + '-р хуудас">' + p + "</button>";
+      }).join("") +
+      '<button type="button" data-page="' + (d.page + 1) + '"' + (d.page >= d.pages ? " disabled" : "") + ' aria-label="Дараагийн хуудас"><svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg></button>';
+  }
+  $("pages").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-page]");
+    if (!b || b.disabled) return;
+    st.page = +b.getAttribute("data-page"); load();
+    $("table-scroll").scrollTop = 0;
+    document.querySelector(".panel-head").scrollIntoView({ block: "nearest" });
+  });
+
+  // ---- Load ----
+  function renderViewTabs() {
+    ["todo", "all"].forEach(function (v) {
+      var b = $("view-" + v), on = st.view === v;
+      b.setAttribute("aria-selected", on ? "true" : "false");
+      b.tabIndex = on ? 0 : -1;
+    });
+    var n = B.todoCount || 0;
+    $("todo-count").textContent = n ? n : "";
+    $("todo-count").hidden = !n;
+    $("tbl-title").firstChild.textContent = st.view === "todo" ? "Миний хийх ажил " : "Бүртгэлүүд ";
+  }
+  function setView(v) {
+    if (st.view === v) return;
+    st.view = v; st.page = 1; load();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".view-tab"), function (b, i, all) {
+    b.addEventListener("click", function () { setView(b.getAttribute("data-view")); });
+    b.addEventListener("keydown", function (e) {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      var next = all[(i + (e.key === "ArrowRight" ? 1 : all.length - 1)) % all.length];
+      next.focus(); setView(next.getAttribute("data-view"));
+    });
+  });
+
+  function load() {
+    var my = ++seq;
+    writeUrl(); syncInputs(); renderChips(); renderSortState();
+    if (!data || data.error) skeleton();
+    $("table-scroll").setAttribute("aria-busy", "true");
+    var p = fullQs();
+    if (st.view === "todo") p.set("todo", "1");
+    renderViewTabs();
+    VR.api(BASE + "/api/list?" + p.toString()).then(function (r) {
+      if (my !== seq) return;
+      $("table-scroll").removeAttribute("aria-busy");
+      if (!r.ok) {
+        data = { error: r.data.error };
+        $("tbody").innerHTML = ""; $("cards").innerHTML = ""; $("pager").hidden = true; $("tbl-total").textContent = "";
+        showState("error");
+        return;
+      }
+      data = r.data;
+      B.soonDays = data.soonDays;
+      st.page = data.page;
+      writeUrl();
+      renderKpis(data.kpis);
+      B.todoCount = data.todoCount; renderViewTabs();
+      $("tbl-total").textContent = "· нийт " + data.total;
+      $("tbody").innerHTML = data.rows.map(rowHtml).join("");
+      $("cards").innerHTML = data.rows.map(cardHtml).join("");
+      showState(data.rows.length ? "" : "noresults");
+      renderPager(data);
+      renderChips();
+    });
+  }
+
+  // Row interactions
+  var rowMenu = $("row-menu"), menuFor = null;
+  function closeRowMenu() { rowMenu.hidden = true; if (menuFor) menuFor.setAttribute("aria-expanded", "false"); }
+  document.addEventListener("vr-close-menus", closeRowMenu);
+  $("tbody").addEventListener("click", function (e) {
+    var mb = e.target.closest("[data-menu]");
+    if (mb) {
+      e.stopPropagation();
+      var wasOpen = !rowMenu.hidden && menuFor === mb;
+      document.dispatchEvent(new CustomEvent("vr-close-menus"));
+      if (wasOpen) return;
+      menuFor = mb;
+      var id = mb.getAttribute("data-menu");
+      rowMenu.querySelector('[data-row-act="view"]').href = BASE + "/" + id;
+      var ed = rowMenu.querySelector('[data-row-act="edit"]');
+      ed.hidden = !B.canManage; ed.href = BASE + "/" + id + "?edit=1";
+      rowMenu.hidden = false;
+      var rc = mb.getBoundingClientRect(), mw = rowMenu.offsetWidth, mh = rowMenu.offsetHeight;
+      rowMenu.style.left = Math.max(8, rc.right - mw) + "px";
+      rowMenu.style.top = (rc.bottom + 4 + mh > window.innerHeight ? rc.top - mh - 4 : rc.bottom + 4) + "px";
+      mb.setAttribute("aria-expanded", "true");
+      rowMenu.querySelector("a").focus();
+      return;
+    }
+    if (e.target.closest("a, button")) return;
+    var tr = e.target.closest("tr[data-id]");
+    if (!tr) return;
+    var url = BASE + "/" + tr.getAttribute("data-id");
+    if (e.ctrlKey || e.metaKey) window.open(url, "_blank"); else location.href = url;
+  });
+  rowMenu.addEventListener("keydown", function (e) {
+    var items = Array.prototype.slice.call(rowMenu.querySelectorAll("a:not([hidden])"));
+    var i = items.indexOf(document.activeElement);
+    if (e.key === "Escape") { closeRowMenu(); if (menuFor) menuFor.focus(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); (items[i + 1] || items[0]).focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); (items[i - 1] || items[items.length - 1]).focus(); }
+  });
+  window.addEventListener("resize", closeRowMenu);
+  $("table-scroll").addEventListener("scroll", closeRowMenu);
+
+  // ---- Init ----
+  try {
+    var flash = sessionStorage.getItem("vulnreg-flash");
+    if (flash) { sessionStorage.removeItem("vulnreg-flash"); VR.toast(flash, "ok"); }
+  } catch (e) {}
+  syncInputs();
+  load();
+  VR.options().then(function (O) {
+    options = O;
+    O.users.forEach(function (u) {
+      var o = document.createElement("option"); o.value = u.id; o.textContent = u.name; inputs.assignee.appendChild(o);
+    });
+    // Drop placeholder options created for URL values now that real labels exist.
+    [inputs.assignee].forEach(function (sel) {
+      Array.prototype.slice.call(sel.options).forEach(function (o) { if (/^#\d+$/.test(o.textContent)) o.remove(); });
+    });
+    syncInputs(); renderChips();
+  }, function () {});
+})();
+</script>
+</body>
+</html>
