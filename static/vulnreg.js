@@ -509,6 +509,43 @@
     }).join("");
   }
 
+  /* «Хариуцагч сонгох» window shown when a new registration is submitted: picks the person who reviews the record
+     and assigns the engineer (acts as the IT Head for it).
+     Resolves to the chosen user id, or "" if cancelled. */
+  VR.pickResponsible = function (people, title) {
+    return new Promise(function (resolve) {
+      var dlg = document.createElement("dialog");
+      dlg.className = "modal narrow";
+      dlg.setAttribute("aria-labelledby", "rp-title");
+      dlg.innerHTML =
+        '<form novalidate><div class="m-head"><div><h2 id="rp-title">Хариуцагч сонгох</h2>' +
+        (title ? "<p>" + esc(title) + "</p>" : "") + "</div>" +
+        '<button type="button" class="icon-btn" data-close aria-label="Хаах"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>' +
+        '<div class="m-body">' +
+        (people.length ? "" : '<div class="m-alert">Идэвхтэй хэрэглэгч олдсонгүй.</div>') +
+        '<div class="field"><label for="rp-user">Хариуцагч (инженер томилох)<span class="req">*</span></label>' +
+        '<div class="combo"><input id="rp-user" type="text" placeholder="Ажилтны нэрээр хайх…"><input type="hidden" name="rp_assignee"></div>' +
+        '<span class="err-msg" data-err="rp_assignee"></span></div>' +
+        '<p class="hint" style="margin:0">Бүртгэл IT-ийн даргын оронд сонгосон хүнд очно. Тэр хянаж, мэдээлэл дутуу бол буцааж, ' +
+        "засварлах инженерийг томилно. Сонгосон хүнд и-мэйлээр мэдэгдэл очно.</p></div>" +
+        '<div class="m-foot"><button type="button" class="btn-secondary" data-close>Буцах</button>' +
+        '<button type="submit" class="btn-primary">Бүртгэх</button></div></form>';
+      var form = dlg.querySelector("form"), hidden = form.querySelector('[name="rp_assignee"]');
+      VR.combo(form.querySelector("#rp-user"), hidden,
+        people.map(function (u) { return { id: u.id, label: u.name, sub: u.dept }; }));
+      var result = "";
+      form.addEventListener("submit", function (ev) {
+        ev.preventDefault();
+        if (!hidden.value) { VR.setErrors(form, { rp_assignee: "Жагсаалтаас сонгоно уу." }); return; }
+        result = hidden.value;
+        dlg.close();
+      });
+      Array.prototype.forEach.call(dlg.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { dlg.close(); }); });
+      dlg.addEventListener("close", function () { dlg.remove(); resolve(result); });
+      VR.showModal(dlg, form.querySelector("#rp-user"));
+    });
+  };
+
   /* opts: {record (detail item, for edit), onSaved(data)} */
   VR.openVulnForm = function (opts) {
     opts = opts || {};
@@ -609,16 +646,26 @@
         if (!VR.setErrors(form, errs)) { alertBox.textContent = "Улаанаар тэмдэглэсэн талбаруудыг засна уу."; return; }
         var data = {};
         Array.prototype.forEach.call(form.querySelectorAll("[name]"), function (n) { if (!n.disabled) data[n.name] = n.value; });
-        submitBtn.disabled = true;
-        VR.api(editing ? BASE + "/api/" + rec.id + "/update" : BASE + "/api/create", { form: data }).then(function (r) {
-          submitBtn.disabled = false;
-          if (!r.ok) {
-            alertBox.textContent = r.data.error || "Хадгалж чадсангүй.";
-            if (r.data.fields) VR.setErrors(form, r.data.fields);
-            return;
-          }
-          dlg.close();
-          if (opts.onSaved) opts.onSaved(r.data);
+        function send() {
+          submitBtn.disabled = true;
+          VR.api(editing ? BASE + "/api/" + rec.id + "/update" : BASE + "/api/create", { form: data }).then(function (r) {
+            submitBtn.disabled = false;
+            if (!r.ok) {
+              alertBox.textContent = r.data.error || "Хадгалж чадсангүй.";
+              if (r.data.fields) VR.setErrors(form, r.data.fields);
+              return;
+            }
+            dlg.close();
+            if (opts.onSaved) opts.onSaved(r.data);
+          });
+        }
+        if (editing) { send(); return; }
+        // New registration: the registrant chooses the responsible person, who acts as the IT Head for this record
+        // (reviews it and assigns the engineer) — instead of the record going to the IT Head automatically.
+        VR.pickResponsible(O.people || [], data.title || "").then(function (id) {
+          if (!id) return;
+          data.reviewer_id = id;
+          send();
         });
       });
       Array.prototype.forEach.call(dlg.querySelectorAll("[data-close]"), function (b) { b.addEventListener("click", function () { dlg.close(); }); });

@@ -144,7 +144,7 @@
     <header class="topbar">
       <div class="page-head">
         <h1>Тохиргоо</h1>
-        <p>Эрх олгох, хандах эрх, орлон гүйцэтгэгч, эрсдэлийн матриц, маягтын бүтэц, засварлах хугацаа (SLA). Зөвхөн админ (InfoSec) харж, өөрчилнө. Өөрчлөлт бүрийн шалтгаан аудитын түүхэнд хадгалагдана.</p>
+        <p>Эрх олгох, хандах эрх, орлон гүйцэтгэгч, эрсдэлийн матриц, маягтын бүтэц, засварлах хугацаа (SLA). Зөвхөн админ (InfoSec) харж, өөрчилнө. Өөрчлөлт бүр аудитын түүхэнд хадгалагдана.</p>
       </div>
     </header>
 
@@ -182,7 +182,6 @@
               <tbody id="perm-rows"></tbody>
             </table></div>
             <p class="muted" style="margin:0;font-size:12.5px">«Бүх бүртгэлийг харах» эрхгүй бол зөвхөн өөрт томилогдсон, өөрийн бүртгэсэн болон өөрийн шийдвэр шаардсан бүртгэлийг харна. InfoSec-ийн үндсэн эрхийг хаах боломжгүй.</p>
-            <div class="field"><label for="perm-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="perm-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
             <div class="m-alert" id="perm-alert" role="alert"></div>
           </div>
           <div class="set-foot"><button type="submit" class="btn-primary" id="perm-save">Хадгалах</button></div>
@@ -192,7 +191,7 @@
       <section class="card set-card" id="subs" role="tabpanel" hidden aria-labelledby="h-subs">
         <div class="sec-head">
           <div><h2 id="h-subs">Орлон гүйцэтгэгч</h2>
-          <p>CTO эсвэл IT-ийн дарга чөлөө авсан, байхгүй үед батлах, томилох үүргийг хэн гүйцэтгэхийг заана. Хугацааны турш орлон гүйцэтгэгч тухайн үүргийн эрх, мэдэгдлийг авна.</p></div>
+          <p>InfoSec, IT-ийн дарга эсвэл CTO чөлөө авсан, байхгүй үед тухайн үүргийг хэн гүйцэтгэхийг заана. Хугацааны турш орлон гүйцэтгэгч тухайн үүргийн эрх, мэдэгдлийг авна.</p></div>
         </div>
         <div class="set-body">
           <div class="hist-wrap"><table class="hist">
@@ -205,13 +204,12 @@
           <div class="set-body" style="padding-top:0">
             <h3 class="sub-h">Шинэ томилгоо</h3>
             <div class="form-grid">
-              <div class="field"><label for="sub-role">Үүрэг<span class="req">*</span></label><select id="sub-role" name="role"><option value="it_head">IT-ийн дарга (IT Head)</option><option value="cto">CTO</option></select><span class="err-msg" data-err="role"></span></div>
+              <div class="field"><label for="sub-role">Үүрэг<span class="req">*</span></label><select id="sub-role" name="role"><option value="infosec">Мэдээллийн аюулгүй байдал (InfoSec)</option><option value="it_head">IT-ийн дарга (IT Head)</option><option value="cto">CTO</option></select><span class="err-msg" data-err="role"></span></div>
               <div class="field"><label for="sub-principal">Орлуулагдах ажилтан<span class="req">*</span></label><select id="sub-principal" name="principal_id"></select><span class="err-msg" data-err="principal_id"></span></div>
               <div class="field"><label for="sub-sub">Орлон гүйцэтгэгч<span class="req">*</span></label><select id="sub-sub" name="substitute_id"></select><span class="err-msg" data-err="substitute_id"></span></div>
               <div class="field"><label for="sub-start">Эхлэх огноо<span class="req">*</span></label><input type="date" id="sub-start" name="start_date"><span class="err-msg" data-err="start_date"></span></div>
               <div class="field"><label for="sub-end">Дуусах огноо<span class="req">*</span></label><input type="date" id="sub-end" name="end_date"><span class="err-msg" data-err="end_date"></span></div>
               <div class="field"><label for="sub-note">Тайлбар</label><input type="text" id="sub-note" name="note" maxlength="500" placeholder="Ээлжийн амралт, томилолт…"></div>
-              <div class="field full"><label for="sub-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="sub-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
             </div>
             <div class="m-alert" id="sub-alert" role="alert"></div>
           </div>
@@ -232,7 +230,6 @@
               <div class="field"><label for="medium_max">Дунд (Medium): оноо ≤</label><input type="number" id="medium_max" name="medium_max" min="2" max="24" step="1"><span class="hint">Үүнээс их бол Өндөр (High).</span><span class="err-msg" data-err="medium_max"></span></div>
               <div class="field"><span class="label">Урьдчилан харах</span><div id="mx-preview"></div></div>
             </div>
-            <div class="field"><label for="risk-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="risk-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
             <div class="m-alert" id="risk-alert" role="alert"></div>
           </div>
           <div class="set-foot">
@@ -245,7 +242,7 @@
       <section class="card set-card" id="forms" role="tabpanel" hidden aria-labelledby="h-forms">
         <div class="sec-head">
           <div><h2 id="h-forms">Маягтын бүтэц</h2>
-          <p>Эмзэг байдал бүртгэх, Хөрөнгө ба хариуцлага / Үнэлгээ (Инженер), Эрсдэлийн үнэлгээ (MAS-14) маягтын хэсэг (карт), талбар, дарааллыг удирдана.
+          <p>Эмзэг байдал бүртгэх (InfoSec), Хөрөнгө ба хариуцлага / Үнэлгээ (Инженер), Эрсдэлийн үнэлгээ (InfoSec) маягтын хэсэг (карт), талбар, дарааллыг удирдана.
           <b>Системийн</b> талбарууд ажлын урсгалд ашиглагддаг тул нэр, тайлбар, байрлалыг нь өөрчилж, шаардлагагүй бол нууж болно — устгах боломжгүй. Нэмэлт талбарыг бүрэн удирдана; устгасан талбарын өмнө оруулсан утга бүртгэлд хадгалагдана.</p></div>
         </div>
         <div class="set-body">
@@ -254,7 +251,6 @@
           <div id="fd-editor"></div>
           <div><button type="button" class="btn-secondary" id="fd-add-sec"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Хэсэг (карт) нэмэх</button></div>
           <form id="fd-form" novalidate>
-            <div class="field"><label for="fd-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="fd-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
             <div class="m-alert" id="fd-alert" role="alert"></div>
           </form>
         </div>
@@ -277,7 +273,6 @@
               <tbody id="sla-rows"><tr><td colspan="4"><span class="sk" style="width:60%"></span></td></tr></tbody>
             </table>
             <p class="muted" style="margin:0;font-size:12.5px">Өөрчлөлт зөвхөн <b>шинээр бүртгэх</b> болон CVSS оноо нь өөрчлөгдсөн бүртгэлд хэрэгжинэ. Одоо байгаа нээлттэй бүртгэлүүдэд хэрэглэх бол доорх «Дахин тооцоолох»-ыг ашиглана уу. CVSS 0.0 = None (хугацаагүй).</p>
-            <div class="field"><label for="sla-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="sla-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
             <div class="m-alert" id="sla-alert" role="alert"></div>
           </div>
           <div class="set-foot">
@@ -300,7 +295,6 @@
               <span class="hint" id="dl-hint"></span>
               <span class="err-msg" data-err="due_soon_days"></span>
             </div>
-            <div class="field"><label for="dl-reason">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="dl-reason" name="reason" rows="2" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div>
             <div class="m-alert" id="dl-alert" role="alert"></div>
           </div>
           <div class="set-foot">
@@ -328,7 +322,7 @@
 </div>
 
 <script>window.VR_BOOT = {{BOOT_JSON}};</script>
-<script src="/static/vulnreg.js"></script>
+<script src="/static/vulnreg.js?v=20261117c"></script>
 <script>
 (function () {
   "use strict";
@@ -385,7 +379,7 @@
       renderRoles(); renderPerms(S.perms); renderSubs(); renderRisk(S.risk); renderSla(S.sla); renderDeadline(S.dueSoonDays); renderHistory(S.history);
     });
   }
-  /* Generic section save: posts the form + section, shows field errors, clears the reason on success. */
+  /* Generic section save: posts the form + section, shows field errors. */
   function saveSection(form, section, extra, alertId, btnId, after) {
     var alertBox = $(alertId); alertBox.textContent = "";
     var data = { section: section };
@@ -394,7 +388,6 @@
       else data[n.name] = n.value;
     });
     Object.keys(extra || {}).forEach(function (k) { data[k] = extra[k]; });
-    if (!(data.reason || "").trim()) { VR.setErrors(form, { reason: "Өөрчлөлтийн шалтгааныг заавал бичнэ үү." }); alertBox.textContent = "Шалтгаан бичнэ үү."; return; }
     VR.setErrors(form, {});
     var btn = $(btnId); busy(btn, true);
     VR.api(API, { form: data }).then(function (r) {
@@ -404,32 +397,25 @@
         alertBox.textContent = r.data.error || "Хадгалж чадсангүй.";
         return;
       }
-      var rs = form.querySelector('[name="reason"]'); if (rs) rs.value = "";
       VR.toast(r.data.message, "ok");
       if (after) after(r.data);
       reload();
     });
   }
-  /* Modal that insists on a reason before resolving. */
-  function askReason(title, body) {
+  /* Plain yes/no confirmation; body is trusted HTML built by the caller (values escaped with esc()). */
+  function askConfirm(title, body) {
     return new Promise(function (resolve) {
       var dlg = document.createElement("dialog");
       dlg.className = "modal narrow";
       dlg.setAttribute("aria-labelledby", "rs-title");
       dlg.innerHTML = '<form novalidate><div class="m-head"><div><h2 id="rs-title">' + esc(title) + "</h2></div></div>" +
-        '<div class="m-body"><p style="margin:0">' + body + "</p>" +
-        '<div class="field"><label for="rs-text">Өөрчлөлтийн шалтгаан<span class="req">*</span></label><textarea id="rs-text" rows="3" maxlength="2000"></textarea><span class="err-msg" data-err="reason"></span></div></div>' +
-        '<div class="m-foot"><button type="button" class="btn-secondary" data-no>Болих</button><button type="submit" class="btn-primary">Батлах</button></div></form>';
-      var result = null;
+        '<div class="m-body"><p style="margin:0">' + body + "</p></div>" +
+        '<div class="m-foot"><button type="button" class="btn-secondary" data-no>Болих</button><button type="submit" class="btn-primary" data-yes>Батлах</button></div></form>';
+      var result = false;
       dlg.querySelector("[data-no]").addEventListener("click", function () { dlg.close(); });
-      dlg.querySelector("form").addEventListener("submit", function (e) {
-        e.preventDefault();
-        var v = dlg.querySelector("#rs-text").value.trim();
-        if (!v) { VR.setErrors(dlg, { reason: "Шалтгаан заавал бичнэ." }); return; }
-        result = v; dlg.close();
-      });
+      dlg.querySelector("form").addEventListener("submit", function (e) { e.preventDefault(); result = true; dlg.close(); });
       dlg.addEventListener("close", function () { dlg.remove(); resolve(result); });
-      VR.showModal(dlg, dlg.querySelector("#rs-text"));
+      VR.showModal(dlg, dlg.querySelector("[data-yes]"));
     });
   }
 
@@ -496,9 +482,9 @@
   $("sub-rows").addEventListener("click", function (e) {
     var b = e.target.closest("[data-revoke]"); if (!b) return;
     var s = S.substitutes.filter(function (x) { return String(x.id) === b.getAttribute("data-revoke"); })[0];
-    askReason("Орлох томилгоо цуцлах", esc(s.roleLabel) + ": " + esc(s.principal) + " → <b>" + esc(s.substitute) + "</b>, " + esc(s.start) + " – " + esc(s.end)).then(function (reason) {
-      if (!reason) return;
-      VR.api(API, { form: { section: "substitute_revoke", id: s.id, reason: reason } }).then(function (r) {
+    askConfirm("Орлох томилгоо цуцлах", esc(s.roleLabel) + ": " + esc(s.principal) + " → <b>" + esc(s.substitute) + "</b>, " + esc(s.start) + " – " + esc(s.end)).then(function (ok) {
+      if (!ok) return;
+      VR.api(API, { form: { section: "substitute_revoke", id: s.id } }).then(function (r) {
         if (!r.ok) { VR.toast(r.data.error || "Алдаа гарлаа.", "err"); return; }
         VR.toast(r.data.message, "ok"); reload();
       });
@@ -525,10 +511,10 @@
   }
   riskForm.addEventListener("input", preview);
   riskForm.addEventListener("submit", function (e) { e.preventDefault(); saveSection(riskForm, "risk", {}, "risk-alert", "risk-save"); });
-  $("risk-reset").addEventListener("click", function () { renderRisk(S.riskDefault); VR.toast("Анхны утгыг бөглөлөө. Шалтгаан бичээд хадгална уу."); });
+  $("risk-reset").addEventListener("click", function () { renderRisk(S.riskDefault); VR.toast("Анхны утгыг бөглөлөө. «Хадгалах» дарж хэрэгжүүлнэ үү."); });
 
   // ---- Form designer (Маягтын бүтэц) ----
-  var FD_FORMS = [["register", "Эмзэг байдал бүртгэх"], ["engineer", "Хөрөнгө ба хариуцлага · Үнэлгээ (Инженер)"], ["risk", "Эрсдэлийн үнэлгээ (MAS-14)"]];
+  var FD_FORMS = [["register", "Эмзэг байдал бүртгэх (InfoSec)"], ["engineer", "Хөрөнгө ба хариуцлага · Үнэлгээ (Инженер)"], ["risk", "Эрсдэлийн үнэлгээ (InfoSec)"]];
   var fdKey = "register", fdDraft = null, fdFlags = {};
   function fdRand(n) { var a = "abcdefghijklmnopqrstuvwxyz0123456789", o = ""; for (var i = 0; i < n; i++) o += a.charAt(Math.floor(Math.random() * a.length)); return o; }
   function fdClone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -752,20 +738,18 @@
   $("fd-discard").addEventListener("click", function () { fdDraft = null; renderForms(false); VR.setErrors($("fd-form"), {}); $("fd-alert").textContent = ""; });
   $("fd-reset").addEventListener("click", function () {
     var customs = 0; fdDraft.sections.forEach(function (s) { s.fields.forEach(function (f) { if (!f.builtin) customs++; }); });
-    VR.confirm({ title: "Анхны бүтэц сэргээх үү?", body: "Хэсэг, системийн талбаруудын анхны нэр, дараалал сэргээгдэнэ" + (customs ? "; " + customs + " нэмэлт талбар маягтаас хасагдана (утга нь хадгалагдана)" : "") + ". Шалтгаан бичээд хадгалснаар хэрэгжинэ.", confirmLabel: "Сэргээх" })
+    VR.confirm({ title: "Анхны бүтэц сэргээх үү?", body: "Хэсэг, системийн талбаруудын анхны нэр, дараалал сэргээгдэнэ" + (customs ? "; " + customs + " нэмэлт талбар маягтаас хасагдана (утга нь хадгалагдана)" : "") + ". «Хадгалах» дарснаар хэрэгжинэ.", confirmLabel: "Сэргээх" })
       .then(function (ok) { if (!ok) return; fdDraft = fdAnnotate(fdClone(S.formsDefault[fdKey])); fdRender(); });
   });
   $("fd-save").addEventListener("click", function () {
-    var form = $("fd-form"), alertBox = $("fd-alert"), reason = $("fd-reason").value.trim();
+    var form = $("fd-form"), alertBox = $("fd-alert");
     alertBox.textContent = "";
     if (!fdIsDirty()) { VR.toast("Өөрчлөлт алга."); return; }
-    if (!reason) { VR.setErrors(form, { reason: "Өөрчлөлтийн шалтгааныг заавал бичнэ үү." }); alertBox.textContent = "Шалтгаан бичнэ үү."; return; }
     VR.setErrors(form, {});
     var btn = $("fd-save"); busy(btn, true);
-    VR.api(API, { form: { section: "forms", form_key: fdKey, schema: JSON.stringify(fdStrip(fdDraft)), reason: reason } }).then(function (r) {
+    VR.api(API, { form: { section: "forms", form_key: fdKey, schema: JSON.stringify(fdStrip(fdDraft)) } }).then(function (r) {
       busy(btn, false);
       if (!r.ok) { alertBox.textContent = r.data.error || "Хадгалж чадсангүй."; if (r.data.fields) VR.setErrors(form, r.data.fields); return; }
-      $("fd-reason").value = "";
       VR.toast(r.data.message, "ok");
       fdDraft = null;
       reload();
@@ -829,7 +813,7 @@
   });
   $("sla-reset").addEventListener("click", function () {
     renderSla(S.slaDefault); VR.setErrors(slaForm, {}); $("sla-alert").textContent = "";
-    VR.toast("Анхны утгыг бөглөлөө. Шалтгаан бичээд хадгална уу.");
+    VR.toast("Анхны утгыг бөглөлөө. «Хадгалах» дарж хэрэгжүүлнэ үү.");
   });
   $("recalc-btn").addEventListener("click", function () {
     var btn = this; busy(btn, true);
@@ -840,10 +824,10 @@
       if (!d.affected) { VR.toast("Бүх нээлттэй бүртгэл одоогийн SLA-д нийцэж байна. Өөрчлөх зүйлгүй."); return; }
       var body = "Түвшин/SLA өөрчлөгдөх: <b>" + d.affected + "</b> · хугацаа шилжих: <b>" + d.dueChanged + "</b> · гараар оруулсан хугацаа хадгалагдах: <b>" + d.manualDueKept + "</b>" +
         (d.sample.length ? '<br><small class="muted">Жишээ: ' + d.sample.map(esc).join(", ") + (d.affected > d.sample.length ? " …" : "") + "</small>" : "");
-      return askReason("Дахин тооцоолох уу?", body).then(function (reason) {
-        if (!reason) return;
+      return askConfirm("Дахин тооцоолох уу?", body).then(function (ok) {
+        if (!ok) return;
         busy(btn, true);
-        return VR.api(API + "/recalc", { form: { dry_run: "0", reason: reason } }).then(function (r2) {
+        return VR.api(API + "/recalc", { form: { dry_run: "0" } }).then(function (r2) {
           busy(btn, false);
           if (!r2.ok) { VR.toast(r2.data.error || "Алдаа гарлаа.", "err"); return; }
           VR.toast(r2.data.message || "Шинэчлэгдлээ.", "ok"); reload();

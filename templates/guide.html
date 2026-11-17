@@ -1,0 +1,588 @@
+<div class="guide-layout">
+  <nav class="guide-toc" aria-label="Гарын авлагын агуулга">
+    <div class="guide-toc-title">Агуулга</div>
+    <ol id="guide-toc-list"></ol>
+  </nav>
+
+  <div class="guide-content" id="guide-content">
+    <section class="panel">
+      <div class="guide-hero">
+        <div>
+          <h1>Хэрэглэгчийн гарын авлага</h1>
+          <p class="muted">МАБ Платформ — мэдээллийн хөрөнгө, эмзэг байдал, зөрчлийн бүртгэлийг ашиглах алхам алхмаар заавар.</p>
+          <p class="muted" style="margin-top:6px">Таны эрх: <span class="guide-role me">{{ME_ROLES_TEXT}}</span> — танд хамаарах хэсгүүдийг <span class="guide-role me">цэнхэр</span> шошгоор тэмдэглэв.</p>
+        </div>
+        <input type="search" class="guide-search" id="guide-search" placeholder="Гарын авлагаас хайх…" aria-label="Гарын авлагаас хайх">
+      </div>
+    </section>
+    <p class="muted guide-empty-search" id="guide-empty">Хайлтад тохирох хэсэг олдсонгүй.</p>
+
+    <!-- 1. Getting started -->
+    <section class="panel guide-section" id="start" data-roles="all">
+      <h2 data-short="Нэвтрэх ба нууц үг"><span class="guide-num"></span>Системд нэвтрэх</h2>
+      <p class="guide-lead">Бүх хэрэглэгч</p>
+      <p>Системд таны байгууллагын и-мэйл хаягаар бүртгэл үүсгэсэн байх ёстой. Шинэ хэрэглэгчийг Супер админ нэмдэг бөгөөд нэмэгдмэгц танд <b>«Burtgel - Системд нэмэгдсэн урилга»</b> гарчигтай и-мэйл ирнэ.</p>
+
+      <h3>Анх удаа нэвтрэх (урилгаар)</h3>
+      <ol class="guide-steps">
+        <li><b>Урилгын и-мэйлийг нээнэ.</b> Доторх холбоос <b>24 цагийн</b> турш хүчинтэй.</li>
+        <li><b>«Нууц үг үүсгэх» хуудсанд</b> <span class="ui">Шинэ нууц үг</span>, <span class="ui">Нууц үг давтах</span> талбарыг бөглөөд <span class="ui primary">Нууц үг үүсгэх</span> дарна.</li>
+        <li>Систем таныг автоматаар нэвтрүүлж <b>Хяналтын самбар</b> (энгийн хэрэглэгчийг өөрийн хэлтсийн хөрөнгийн бүртгэл) руу шилжүүлнэ.</li>
+      </ol>
+      <div class="guide-tip">Холбоосын хугацаа дууссан бол Супер админаас урилгыг дахин илгээхийг хүснэ үү.</div>
+
+      <h3>Өдөр тутам нэвтрэх</h3>
+      <figure class="guide-figure">
+        <div class="mock" style="max-width:360px;margin:0 auto">
+          <div class="mock-bar"><i></i><i></i><i></i><span>/login</span></div>
+          <div class="mock-body">
+            <div class="mock-card" style="display:flex;flex-direction:column;gap:8px">
+              <b style="font-size:.875rem">Нэвтрэх</b>
+              <div class="mock-field"><small>И-мэйл / хэрэглэгчийн нэр</small><div class="mock-input">name@company.mn</div></div>
+              <div class="mock-field"><small>Нууц үг</small><div class="mock-input">••••••••••••</div></div>
+              <div class="mock-row"><span class="mock-btn primary">Нэвтрэх</span><span style="color:var(--primary)">Нууц үг мартсан уу?</span></div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Зураг 1. Нэвтрэх хуудас (жишээ дүрслэл)</figcaption>
+      </figure>
+      <ol class="guide-steps">
+        <li><span class="ui">И-мэйл / хэрэглэгчийн нэр</span> болон <span class="ui">Нууц үг</span>-ээ оруулаад <span class="ui primary">Нэвтрэх</span> дарна.</li>
+        <li>Компанийн порталаар (SSO) орж ирж байгаа бол нууц үг шаардлагагүй — портал таныг шууд нэвтрүүлнэ.</li>
+      </ol>
+      <div class="guide-warn">60 минут идэвхгүй байвал (ямар ч үйлдэл хийгээгүй бол) систем таныг автоматаар гаргана. Ажлаа дуусгаад баруун дээд буланд байрлах <span class="ui">Гарах</span> товчийг дарж гарна уу.</div>
+
+      <h3>Нууц үгээ мартсан бол</h3>
+      <ol class="guide-steps">
+        <li>Нэвтрэх хуудсан дээрх <b>«Нууц үг мартсан уу?»</b> холбоосыг дарна.</li>
+        <li><span class="ui">И-мэйл хаяг</span>-аа оруулаад <span class="ui primary">Код илгээх</span> дарна. Таны и-мэйлд <b>6 оронтой код</b> ирнэ (15 минут хүчинтэй).</li>
+        <li><span class="ui">Нэг удаагийн код</span>, <span class="ui">Шинэ нууц үг</span>, <span class="ui">Нууц үг давтах</span> талбарыг бөглөөд <span class="ui primary">Нууц үг солих</span> дарна.</li>
+      </ol>
+
+      <h3>Нууц үгээ солих</h3>
+      <p>Нэвтэрсэн үедээ <a href="/account/password">Нууц үг солих</a> хуудсанд <span class="ui">Одоогийн нууц үг</span>, <span class="ui">Шинэ нууц үг</span>, <span class="ui">Шинэ нууц үг давтах</span>-ыг бөглөөд <span class="ui primary">Шинэчлэх</span> дарна.</p>
+      <div class="guide-tip">Нууц үгийн шаардлага: хамгийн багадаа <b>12 тэмдэгт</b>, дор хаяж 1 том үсэг, 1 жижиг үсэг, 1 тоо, 1 тусгай тэмдэгт; зай агуулахгүй.</div>
+    </section>
+
+    <!-- 2. Navigation -->
+    <section class="panel guide-section" id="nav" data-roles="all">
+      <h2 data-short="Цэс ба дэлгэц"><span class="guide-num"></span>Дэлгэцийн бүтэц ба цэс</h2>
+      <p class="guide-lead">Бүх хэрэглэгч — харагдах цэс таны эрхээс хамаарна.</p>
+      <figure class="guide-figure">
+        <div class="mock">
+          <div class="mock-bar"><i></i><i></i><i></i><span>/dashboard</span></div>
+          <div class="mock-nav">
+            <b>▣ МАБ Платформ</b>
+            <span class="on">Самбар</span><span>Хэлтсүүд</span><span>Хэрэглэгчид</span><span>KPI</span><span>Эрх</span><span>Аудит</span>
+            <span class="mock-hl">Бүртгэл ▾<span class="mock-callout">1</span></span><span class="mock-hl">Бичиг баримт ▾<span class="mock-callout">2</span></span>
+            <span class="mock-right"><span class="mock-btn mock-hl">? Гарын авлага<span class="mock-callout">3</span></span><span class="mock-btn">☀ Цайвар</span><span class="mock-hl" style="padding:0 4px">Нэр / Хэлтэс<span class="mock-callout">4</span></span><span class="mock-btn">Гарах</span></span>
+          </div>
+          <div class="mock-body"><div class="mock-row"><div class="mock-stat"><small>Нийт хөрөнгө</small><strong>—</strong></div><div class="mock-stat"><small>Хэлтэс</small><strong>—</strong></div><div class="mock-stat"><small>Хэрэглэгч</small><strong>—</strong></div></div></div>
+        </div>
+        <figcaption>Зураг 2. Дээд цэс (Супер админы харагдац)</figcaption>
+      </figure>
+      <ol class="guide-steps">
+        <li><b>Бүртгэл ▾</b> — Зөрчлийн бүртгэл, Эмзэг байдлын бүртгэл. Зөвхөн эрх олгогдсон хэрэглэгчид харагдана.</li>
+        <li><b>Бичиг баримт ▾</b> — батлагдсан бичиг баримт, загварууд. Бүх хэрэглэгчид харагдана; файлын нэр дээр дарж нээнэ.</li>
+        <li><b>? Гарын авлага</b> — энэ хуудас.</li>
+        <li><b>Таны нэр, хэлтэс.</b> Хажууд нь <span class="ui">☀ Цайвар</span> / <span class="ui">🌙 Харанхуй</span> товчоор дэлгэцийн өнгийг сольж, <span class="ui">Гарах</span> товчоор системээс гарна.</li>
+      </ol>
+      <div class="guide-table-wrap"><table class="guide-table">
+        <thead><tr><th>Эрх</th><th>Үндсэн цэс</th></tr></thead>
+        <tbody>
+          <tr><td><span class="guide-role" data-r="superadmin">Супер админ</span></td><td>Самбар · Хэлтсүүд · Хэрэглэгчид · KPI · Эрх · Аудит</td></tr>
+          <tr><td><span class="guide-role" data-r="admin">Хэлтсийн админ</span></td><td>Самбар · Миний хэлтэс · KPI</td></tr>
+          <tr><td><span class="guide-role" data-r="user">Хэрэглэгч</span></td><td>Хөрөнгийн бүртгэл (өөрийн хэлтэс)</td></tr>
+        </tbody>
+      </table></div>
+      <p>Хүснэгтийн баганын гарчиг дээр дарж эрэмбэлэх, хуудасны дээрх хайлтын талбараар шүүх боломжтой. Үйлдэл амжилттай болвол хуудасны дээд хэсэгт ногоон, алдаа гарвал улаан мэдэгдэл гарна.</p>
+    </section>
+
+    <!-- 3. Dashboard -->
+    <section class="panel guide-section" id="dashboard" data-roles="superadmin admin">
+      <h2 data-short="Хяналтын самбар"><span class="guide-num"></span>Хяналтын самбар <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span><span class="guide-role" data-r="admin">Хэлтсийн админ</span></span></h2>
+      <p>Нэвтэрсний дараа хамгийн түрүүнд харагдах хуудас. Энгийн хэрэглэгч шууд өөрийн хэлтсийн хөрөнгийн бүртгэл рүү шилждэг.</p>
+      <ul>
+        <li><b>Супер админ:</b> «Нийт хөрөнгө», «Хэлтэс», «Хэрэглэгч», «Өөрчлөлт (сүүлийн 7 хоног)» тоон карт; «Хяналтын KPI» лавлахууд; «Бүртгэлүүд» (нэмэлт бүртгэлүүд); баруун талд сүүлийн 20 аудитын бичлэг.</li>
+        <li><b>Хэлтсийн админ:</b> өөрийн хэлтсийн хөрөнгийн тоо, сүүлийн 7 хоногийн өөрчлөлт, <span class="ui">Хэлтсийн бүртгэл</span> товч, «Бүртгэлүүд».</li>
+      </ul>
+      <p>Админ болон Супер админы дэлгэцийн хажуу талд <b>«Админ баримтууд»</b> гэсэн таб байрлана — хулганаар заахад ангилал, файлууд нээгдэнэ.</p>
+    </section>
+    <!-- 4. Asset register -->
+    <section class="panel guide-section" id="assets" data-roles="all">
+      <h2 data-short="Мэдээллийн хөрөнгийн бүртгэл"><span class="guide-num"></span>Мэдээллийн хөрөнгийн бүртгэл <span class="guide-roles"><span class="guide-role" data-r="all">Бүх хэрэглэгч</span></span></h2>
+      <p>Хэлтэс бүр өөрийн мэдээллийн хөрөнгийг (өгөгдөл, програм хангамж, техник хангамж, сүлжээ, хүний нөөц, баримт бичиг) энд бүртгэж, нууцлал–бүрэн бүтэн байдал–хүртээмжийн (CIA) үнэлгээг хийнэ.</p>
+      <ul>
+        <li><b>Хэрэглэгч:</b> цэсний <span class="ui">Хөрөнгийн бүртгэл</span> — өөрийн хэлтэс (мөн Супер админы олгосон бусад хэлтэс).</li>
+        <li><b>Хэлтсийн админ:</b> <span class="ui">Миний хэлтэс</span>; бусад хэлтэс рүү <span class="ui">Хэлтсүүд</span> хуудсаар орно.</li>
+        <li><b>Супер админ:</b> <span class="ui">Хэлтсүүд</span> → хэлтсийн карт дээрх <span class="ui">Бүртгэл нээх</span>.</li>
+      </ul>
+
+      <figure class="guide-figure">
+        <div class="mock">
+          <div class="mock-bar"><i></i><i></i><i></i><span>/departments/…/assets</span></div>
+          <div class="mock-body">
+            <div class="mock-row" style="justify-content:space-between"><b style="font-size:.875rem">Хөрөнгийн бүртгэл</b><span class="mock-btn primary mock-hl">Хөрөнгө нэмэх<span class="mock-callout">1</span></span></div>
+            <div class="mock-input mock-hl" style="max-width:300px">Хөрөнгийн нэр, төрөл, эзэмшигч хайх...<span class="mock-callout">2</span></div>
+            <div class="mock-card" style="padding:0;overflow-x:auto">
+              <table class="mock-table">
+                <thead><tr><th>Хөрөнгө ↕</th><th>Төрөл</th><th>Код</th><th>Эзэмшигч</th><th>Категори</th><th>Үлдсэн хугацаа</th><th></th></tr></thead>
+                <tbody>
+                  <tr><td>Харилцагчийн мэдээллийн сан</td><td>Цахим</td><td>IDA_DB</td><td>…</td><td><span class="mock-pill red">CAT1</span></td><td><span class="mock-pill green">120 өдөр</span></td><td><span class="mock-btn">Засах</span> <span class="mock-btn">Дэлгэрэнгүй</span></td></tr>
+                  <tr><td>Сервер өрөөний UPS</td><td>Биет</td><td>…</td><td>…</td><td><span class="mock-pill amber">CAT2</span></td><td><span class="mock-pill red mock-hl">Хугацаа хэтэрсэн (4 өдөр)<span class="mock-callout">3</span></span></td><td><span class="mock-btn">Засах</span> <span class="mock-btn">Дэлгэрэнгүй</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <figcaption>Зураг 3. Хөрөнгийн жагсаалт: (1) шинээр нэмэх, (2) хайх, (3) хянах хугацаа (жишээ өгөгдөл)</figcaption>
+      </figure>
+
+      <h3>Шинэ хөрөнгө бүртгэх</h3>
+      <ol class="guide-steps">
+        <li><span class="ui primary">Хөрөнгө нэмэх</span> товчийг дарна.</li>
+        <li><b>«Үндсэн мэдээлэл»:</b> <span class="ui">Хөрөнгийн нэр</span>, <span class="ui">Хөрөнгийн тодорхойлолт</span>, <span class="ui">Хөрөнгийн төрөл</span> (Цахим / Биет), <span class="ui">Код</span>-ыг бөглөнө. Аль кодыг сонгохоо мэдэхгүй бол <span class="ui">Кодын тайлбар</span> товчийг дарж (доорхыг үз) сонгоно.</li>
+        <li><b>«Ангилал ба аюулгүй байдал»:</b> хувь хүний мэдээлэл болон эмзэг мэдээлэл агуулж байгаа эсэхийг <i>Тийм / Үгүй</i>-гээр сонгоно.</li>
+        <li><b>«Эзэмшил ба байршил»:</b> эзэмшигч, хариуцагч, байршил, хадгалах хугацаа, мөн <b>Нууцлал</b>, <b>Бүрэн бүтэн байдал</b>, <b>Хүртээмжтэй байдал</b>-ын үнэлгээг сонгоно. <b>Хөрөнгийн үнэ цэн</b> ба <b>Хөрөнгийн категори</b> автоматаар тооцоологдоно.</li>
+        <li><span class="ui primary">Хадгалах</span> дарна. «Хөрөнгө үүслээ.» мэдэгдэл гарна.</li>
+      </ol>
+      <div class="guide-tip">Тооцоолдог хоёр талбараас бусад бүх талбар заавал бөглөгдөнө. Саарал (идэвхгүй) талбар «Зөвхөн админ өөрчилнө» гэсэн утгатай — Супер админ хэлтэс тус бүрээр хэрэглэгчийн засах талбарыг тохируулдаг.</div>
+
+      <h3>CIA үнэлгээ ба категори</h3>
+      <p>Гурван үзүүлэлт тус бүр 1–3 оноотой. <b>Үнэ цэн = Нууцлал + Бүрэн бүтэн байдал + Хүртээмж</b> (3–9), үүнээс категори тодорхойлогдоно:</p>
+      <div class="guide-table-wrap"><table class="guide-table">
+        <thead><tr><th>Үзүүлэлт</th><th>3 оноо</th><th>2 оноо</th><th>1 оноо</th></tr></thead>
+        <tbody>
+          <tr><td>Нууцлал</td><td>Маш нууц</td><td>Нууц</td><td>Дотоод хэрэгцээнд</td></tr>
+          <tr><td>Бүрэн бүтэн байдал алдагдвал үүсэх нөлөөлөл</td><td>Өндөр</td><td>Дунд</td><td>Бага</td></tr>
+          <tr><td>Хүртээмжтэй байдал алдагдвал үүсэх нөлөөлөл</td><td>Өндөр</td><td>Дунд</td><td>Бага</td></tr>
+        </tbody>
+      </table></div>
+      <div class="guide-table-wrap"><table class="guide-table">
+        <thead><tr><th>Үнэ цэн (нийлбэр)</th><th>Категори</th><th>Жишээ</th></tr></thead>
+        <tbody>
+          <tr><td>7 – 9</td><td><span class="mock-pill red">CAT1</span></td><td>Маш нууц (3) + Өндөр (3) + Дунд (2) = 8 → CAT1</td></tr>
+          <tr><td>4 – 6</td><td><span class="mock-pill amber">CAT2</span></td><td>Нууц (2) + Дунд (2) + Бага (1) = 5 → CAT2</td></tr>
+          <tr><td>3</td><td><span class="mock-pill green">CAT3</span></td><td>Дотоод (1) + Бага (1) + Бага (1) = 3 → CAT3</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>«Кодын тайлбар» цонх</h3>
+      <figure class="guide-figure">
+        <div class="mock" style="max-width:520px;margin:0 auto">
+          <div class="mock-body">
+            <div class="mock-card">
+              <div class="mock-row" style="justify-content:space-between;margin-bottom:6px"><b>Кодын тайлбар</b><span>✕</span></div>
+              <table class="mock-table">
+                <thead><tr><th>Төрөл</th><th>Дэд төрөл</th><th>Хөрөнгийн код</th><th>Жишээ</th></tr></thead>
+                <tbody>
+                  <tr><td>Мэдээлэл / өгөгдлийн хөрөнгө</td><td>…</td><td><span class="mock-pill blue mock-hl">IDA_…<span class="mock-callout">↵</span></span></td><td>…</td></tr>
+                  <tr><td>Техник хангамжийн хөрөнгө</td><td>…</td><td><span class="mock-pill blue">…</span></td><td>…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <figcaption>Зураг 4. Код дээр дарахад маягтын «Код» талбарт автоматаар бөглөгдөж, цонх хаагдана</figcaption>
+      </figure>
+      <p>Цонхыг <span class="ui">✕</span>, <span class="ui">Esc</span> товч эсвэл цонхны гадна дарж хаана.</p>
+
+      <h3>Засах, харах, устгах</h3>
+      <ul>
+        <li><span class="ui">Дэлгэрэнгүй</span> — бүх талбар, сүүлд өөрчилсөн огноо, хянах давтамж, үлдсэн хугацааг харна.</li>
+        <li><span class="ui">Засах</span> — мэдээллийг шинэчлээд <span class="ui primary">Өөрчлөлт хадгалах</span> дарна.</li>
+        <li><span class="ui">Устгах</span> — баталгаажуулах асуултад зөвшөөрнө. Устгасан хөрөнгийг сэргээх боломжгүй.</li>
+      </ul>
+
+      <h3>Хянах хугацаа («Үлдсэн хугацаа»)</h3>
+      <p>Хөрөнгө бүрийг тогтмол хянаж шинэчлэх ёстой. Хянах давтамжийг (Сараар / Улирлаар / Хагас жилээр / Жилээр) админ тохируулна. Сүүлд хадгалсан огнооноос эхлэн тоологдох ба:</p>
+      <ul>
+        <li><span class="mock-pill green">N өдөр</span> — хугацаа байна;</li>
+        <li><span class="mock-pill amber">Өнөөдөр дуусна</span> — өнөөдөр шинэчлэх ёстой;</li>
+        <li><span class="mock-pill red">Хугацаа хэтэрсэн (N өдөр)</span> — хөрөнгийг нээж, мэдээллээ шалгаад <span class="ui primary">Өөрчлөлт хадгалах</span> дарахад хугацаа дахин эхэлнэ.</li>
+      </ul>
+    </section>
+
+    <!-- 5. Departments & PDFs -->
+    <section class="panel guide-section" id="departments" data-roles="superadmin admin user">
+      <h2 data-short="Хэлтэс, бодлого журам"><span class="guide-num"></span>Хэлтэс ба бодлого, журмын PDF</h2>
+      <p><a href="/departments">Хэлтсүүд</a> хуудсанд хэлтэс бүр карт хэлбэрээр (нэр, код, хөрөнгийн тоо) харагдах ба <span class="ui">Бүртгэл нээх</span> дарж тухайн хэлтсийн хөрөнгийн бүртгэл рүү орно.</p>
+      <h3>Хэлтэс нэмэх, засах <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span></span></h3>
+      <ol class="guide-steps">
+        <li><span class="ui primary">+ Хэлтэс нэмэх</span> дарна.</li>
+        <li><span class="ui">Хэлтсийн нэр</span> болон <span class="ui">Код (товч)</span> оруулаад <span class="ui primary">Нэмэх</span> дарна.</li>
+        <li>Засахдаа картын <span class="ui">Засах</span>, устгахдаа <span class="ui">Устгах</span> товчийг ашиглана.</li>
+      </ol>
+      <div class="guide-warn">Хэлтсийг устгахад түүний <b>бүх хөрөнгө хамт устна</b>.</div>
+      <h3>Бодлого, журам (PDF)</h3>
+      <p>Хуудасны доод хэсэгт байгууллагын бодлого, журмын PDF файлууд байрлана. <span class="ui">PDF үзэх</span> — хөтөч дээр нээх, <span class="ui">Татах</span> — компьютерт хадгалах.</p>
+      <p><span class="guide-role" data-r="admin">Хэлтсийн админ</span> <span class="guide-role" data-r="superadmin">Супер админ</span> шинэ PDF нэмэх (<span class="ui">PDF нэмэх</span>), солих (<span class="ui">PDF шинэчлэх</span>), устгах (<span class="ui">PDF устгах</span>) боломжтой.</p>
+    </section>
+
+    <!-- 6. Documents -->
+    <section class="panel guide-section" id="docs" data-roles="all">
+      <h2 data-short="Бичиг баримт"><span class="guide-num"></span>Бичиг баримт</h2>
+      <ul>
+        <li><b>Бүх хэрэглэгч:</b> дээд цэсний <span class="ui">Бичиг баримт ▾</span> → «Батлагдсан бичиг баримт» эсвэл «Баримт бичгийн загвар» → файлын нэр дээр дарж нээнэ. Нээгдсэн хуудсанд <span class="ui">Татах</span> товчоор хадгална.</li>
+        <li><b>Админ, Супер админ:</b> дэлгэцийн хажуугийн <b>«Админ баримтууд»</b> табаас бүх ангиллын файлыг үзнэ. Ангиллын хуудсанд файл <span class="ui">Нээх</span>, <span class="ui">Татах</span>, <span class="ui">Шинэчлэх ▼</span>, <span class="ui">Устгах</span>; мөн <span class="ui">Дэд файл нэмэх</span> (хавсралт) боломжтой.</li>
+        <li><b>Супер админ:</b> «Админ баримтууд» табын <span class="ui">⚙ Засах / удирдах</span> холбоосоор шинэ ангилал (<span class="ui primary">Ангилал нэмэх</span>) болон файл (<span class="ui primary">Нэмэх</span>) үүсгэнэ. Файл сонгохгүй бол хоосон .docx үүснэ.</li>
+      </ul>
+      <h3>Баримтыг шинэчлэх (Супер админ)</h3>
+      <ol class="guide-steps">
+        <li>Баримтыг нээгээд <b>«Файл шинэчлэх»</b> хэсэгт шинэ файлыг чирж оруулна (эсвэл дарж сонгоно).</li>
+        <li><span class="ui">Урьдчилан харах →</span> дарна. Word (.docx) файлын текст дээр дарж шууд засах боломжтой.</li>
+        <li><span class="ui primary">Баталгаажуулж шинэчлэх</span> дарна.</li>
+      </ol>
+      <div class="guide-tip">Зөвшөөрөгдөх төрөл: PDF, Word (.doc/.docx), Excel (.xls/.xlsx). Нэг файлын хэмжээ <b>10 МБ</b>-аас хэтрэхгүй байхаар оруулна уу.</div>
+    </section>
+
+    <!-- 7. Custom registers -->
+    <section class="panel guide-section" id="registers" data-roles="superadmin admin">
+      <h2 data-short="Нэмэлт бүртгэлүүд"><span class="guide-num"></span>Нэмэлт бүртгэлүүд <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span><span class="guide-role" data-r="admin">Хэлтсийн админ</span></span></h2>
+      <p>Flash disk, USB портын хандалт, лицензийн бүртгэл гэх мэт <b>чөлөөт хүснэгт</b>. Баганыг та өөрөө тодорхойлно. Хяналтын самбарын <b>«Бүртгэлүүд»</b> хэсгээс нээнэ.</p>
+      <h3>Бүртгэл үүсгэх</h3>
+      <ol class="guide-steps">
+        <li>«Бүртгэлүүд» хэсгийн <span class="ui">Бүртгэл засах</span> дарна.</li>
+        <li><span class="ui">Бүртгэлийн нэр</span> оруулаад <span class="ui primary">Бүртгэл үүсгэх</span> дарна.</li>
+        <li>Бүртгэлийг нээгээд <span class="ui">Багана удирдах</span> хэсэгт <span class="ui">Баганын нэр</span> бичиж <span class="ui primary">Багана нэмэх</span> дарна. Карт дээр харагдах баганыг <b>«Товч мэдээлэлд»</b> чагтаар сонгоно.</li>
+      </ol>
+      <h3>Мөр нэмэх, хайх, экспорт</h3>
+      <ul>
+        <li><span class="ui">Мөр нэмэх</span> → утгуудыг бөглөөд <span class="ui primary">Хадгалах</span>.</li>
+        <li>Мөр бүр #дугаартай карт болж харагдана: <span class="ui">More</span>, <span class="ui">Засах</span>, <span class="ui">Устгах</span>.</li>
+        <li>Хайлтын талбарт 2+ тэмдэгт бичихэд тохирох мөрүүд гарч ирэх ба дарахад тухайн карт тодорч харагдана.</li>
+        <li>Бүртгэлийн жагсаалтаас <span class="ui">Excel</span> эсвэл <span class="ui">PDF</span>-ээр татна.</li>
+      </ul>
+      <div class="guide-warn">Бүртгэлийг устгахад бүх мөр, баганатай нь устна.</div>
+    </section>
+
+    <!-- 8. KPI -->
+    <section class="panel guide-section" id="kpi" data-roles="superadmin admin">
+      <h2 data-short="KPI"><span class="guide-num"></span>Хяналтын KPI <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span><span class="guide-role" data-r="admin">Хэлтсийн админ</span></span></h2>
+      <ol class="guide-steps">
+        <li>Цэсний <span class="ui">KPI</span> → <span class="ui">Лавлахын нэр</span>, <span class="ui">Тайлбар</span> бөглөөд <span class="ui primary">+ Шинэ лавлах үүсгэх</span>.</li>
+        <li>Лавлахыг <span class="ui">Нээх</span>. Хүснэгтийн сүүлийн мөрөнд шалгуур үзүүлэлт, тайлбар, хэмжих нэгж, зорилтот түвшин, хянах давтамж, дуусах өдрийг бичээд <span class="ui primary">+ Нэмэх</span>.</li>
+        <li>Мөрийн нүдэнд шууд засаад тухайн мөрийн <span class="ui">Хадгалах</span> товчийг дарна. «Үлдсэн хугацаа» дуусах өдрөөс автоматаар тооцоологдоно.</li>
+      </ol>
+      <p>KPI лавлах устгах эрх зөвхөн Супер админд байна.</p>
+    </section>
+
+    <!-- 9. Users & permissions -->
+    <section class="panel guide-section" id="users" data-roles="superadmin">
+      <h2 data-short="Хэрэглэгч ба эрх"><span class="guide-num"></span>Хэрэглэгч ба эрхийн удирдлага <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span></span></h2>
+      <h3>Хэрэглэгч нэмэх</h3>
+      <ol class="guide-steps">
+        <li><span class="ui">Хэрэглэгчид</span> → <span class="ui primary">+ Хэрэглэгч нэмэх</span>.</li>
+        <li><span class="ui">Azure и-мэйл хаяг</span>, <span class="ui">Дэлгэцийн нэр</span>, <span class="ui">Үндсэн хэлтэс</span>-ийг бөглөнө.</li>
+        <li><b>Системийн эрх</b>-ээс нэгийг сонгоно: Хэрэглэгч / Админ / Супер Админ.</li>
+        <li>Шаардлагатай бол <b>Эмзэг байдлын бүртгэл</b>-ийн үүргийг (InfoSec, IT-ийн дарга, Инженер, CTO) нэг буюу хэдийг сонгоно.</li>
+        <li><span class="ui primary">Үүсгэх</span> дарна. Хэрэглэгчид урилгын и-мэйл автоматаар илгээгдэнэ.</li>
+      </ol>
+      <h3>Хэрэглэгч засах</h3>
+      <ul>
+        <li><span class="ui">Засах</span> — эрх, хэлтэс, <b>Идэвхтэй</b> төлөв (идэвхгүй болговол нэвтэрч чадахгүй).</li>
+        <li><b>«Хэлтсийн хандах эрх»</b> — бусад хэлтэс бүрээр <i>Унших</i> эсвэл <i>Засах / Нэмэх / Устгах</i> эрх олгоно. Админ, Супер админ бүх хэлтэст автоматаар хандана.</li>
+        <li><span class="ui">Урилга илгээх</span> / <span class="ui">Дахин илгээх</span> — урилгын и-мэйл (10 минутын дотор дахин илгээх боломжгүй); <span class="ui">OTP илгээх</span> — нэг удаагийн нууц үг илгээх.</li>
+        <li>Өөрийн системийн эрхийг өөрчлөх, өөрийгөө устгах боломжгүй.</li>
+      </ul>
+      <h3>Баганын эрх</h3>
+      <p><span class="ui">Эрх</span> цэсэнд хэлтэс бүрээр энгийн хэрэглэгчийн <b>засах боломжтой талбаруудыг</b> чагтлаад <span class="ui primary">Эрх шинэчлэх</span> дарна. Чагтлаагүй талбар хэрэглэгчид саарал (зөвхөн харах) харагдана.</p>
+    </section>
+
+    <!-- 10. Audit -->
+    <section class="panel guide-section" id="audit" data-roles="superadmin">
+      <h2 data-short="Аудит лог"><span class="guide-num"></span>Аудит лог <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span></span></h2>
+      <p>Системд хийгдсэн бүх үйлдэл (нэвтрэх, гарах, үүсгэх, засах, устгах, нууц үг, эрхийн өөрчлөлт) автоматаар бүртгэгдэнэ. Бичлэгийг засах, устгах боломжгүй.</p>
+      <ol class="guide-steps">
+        <li><span class="ui">Аудит</span> цэсэнд он, сарыг сонгоно.</li>
+        <li>Хэрэглэгчийн нэр, и-мэйлээр хайхдаа 2+ тэмдэгт бичээд <span class="ui primary">Хайх</span> — бүх сараас хайна.</li>
+        <li>Хуудас бүрт 50 бичлэг; <span class="ui">← Өмнөх</span> / <span class="ui">Дараах →</span>-ээр шилжинэ.</li>
+      </ol>
+    </section>
+    <!-- 11. VulnReg -->
+    <section class="panel guide-section" id="vulnreg" data-roles="vuln_access infosec it_head engineer cto">
+      <h2 data-short="Эмзэг байдлын бүртгэл"><span class="guide-num"></span>Эмзэг байдлын бүртгэл (VulnReg) <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span><span class="guide-role" data-r="it_head">IT-ийн дарга</span><span class="guide-role" data-r="engineer">Инженер</span><span class="guide-role" data-r="cto">CTO</span></span></h2>
+      <p>Програм хангамж, системийн эмзэг байдлыг (CVE гэх мэт) бүртгэж, хариуцагч томилох, үнэлэх, засварлах, баталгаажуулж хаах хүртэлх бүх явцыг хянана. Нээх: <span class="ui">Бүртгэл ▾</span> → <span class="ui">Эмзэг байдлын бүртгэл</span>. Энэ хэсэг өөрийн зүүн цэстэй; үндсэн систем рүү <span class="ui">МАБ Платформ руу буцах</span> товчоор буцна.</p>
+
+      <h3>Үүрэг ба хариуцлага</h3>
+      <div class="guide-table-wrap"><table class="guide-table">
+        <thead><tr><th>Үүрэг</th><th>Юу хийх вэ</th></tr></thead>
+        <tbody>
+          <tr><td><span class="guide-role" data-r="infosec">InfoSec</span></td><td>Эмзэг байдал бүртгэнэ; эрсдэлийн үнэлгээ хийж шийдвэр гаргана; засварыг баталгаажуулж хаана; Тохиргоог удирдана.</td></tr>
+          <tr><td><span class="guide-role" data-r="it_head">IT-ийн дарга</span></td><td>Шинэ бүртгэлийг хянаж инженер томилно, эсвэл InfoSec-д буцаана.</td></tr>
+          <tr><td><span class="guide-role" data-r="engineer">Инженер</span></td><td>Хөрөнгө, нөлөөллийг үнэлнэ; засвар эсвэл түр хамгаалалт хийнэ.</td></tr>
+          <tr><td><span class="guide-role" data-r="cto">CTO</span></td><td>Эрсдэлийг хүлээн зөвшөөрөх хүсэлтийг батална эсвэл татгалзана.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="guide-tip">Танд үйлдэл хийх ээлж ирсэн бүртгэлийн тоо зүүн цэсний <b>«Эмзэг байдал»</b> дээр тэмдэглэгдэх ба жагсаалтын <span class="ui">Миний хийх ажил</span> табд харагдана. Ээлж ирэхэд танд и-мэйл ирнэ.</div>
+
+      <h3>Ажлын урсгал</h3>
+      <div class="flow" role="img" aria-label="Эмзэг байдлын ажлын урсгал">
+        <div class="flow-step"><b>1. Бүртгэл</b>InfoSec<em>Шинэ</em></div><div class="flow-arrow">→</div>
+        <div class="flow-step"><b>2. Томилгоо</b>IT-ийн дарга<em>Хариуцагч томилсон</em></div><div class="flow-arrow">→</div>
+        <div class="flow-step"><b>3. Үнэлгээ</b>Инженер<em>Үнэлгээ хийгдэж буй</em></div><div class="flow-arrow">→</div>
+        <div class="flow-step"><b>4. Эрсдэл</b>InfoSec<em>Эрсдэлийн үнэлгээ</em></div><div class="flow-arrow">→</div>
+        <div class="flow-step"><b>5. Засвар</b>Инженер<em>Засвар хийгдэж буй</em></div><div class="flow-arrow">→</div>
+        <div class="flow-step"><b>6. Баталгаажуулалт</b>InfoSec<em>Баталгаажуулалт</em></div><div class="flow-arrow">→</div>
+        <div class="flow-step end"><b>7. Хаалт</b><em>Хаагдсан</em></div>
+      </div>
+      <p>4-р алхамд InfoSec дараах шийдвэрийн аль нэгийг гаргана:</p>
+      <div class="flow">
+        <div class="flow-step"><b>Бууруулах</b>Patch / Mitigate<em>→ Засвар (5-р алхам)</em></div>
+        <div class="flow-step end"><b>Шилжүүлэх</b>Гэрээ / Даатгал / Нийлүүлэгч<em>→ Хаагдсан (нотлох баримт заавал)</em></div>
+        <div class="flow-step alt"><b>Зайлсхийх</b>Систем зогсоох<em>→ Инженер баталгаажуулж, InfoSec хаана</em></div>
+        <div class="flow-step alt"><b>Хүлээн зөвшөөрөх</b>CTO-ийн зөвшөөрөл<em>→ Хугацаатайгаар хүлээн зөвшөөрнө</em></div>
+        <div class="flow-step end"><b>Нөлөөлөөгүй</b>Хөрөнгөд нөлөөлөөгүй<em>→ Шууд хаагдана</em></div>
+      </div>
+
+      <h3>1. Эмзэг байдал бүртгэх <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span></span></h3>
+      <figure class="guide-figure">
+        <div class="mock" style="max-width:560px;margin:0 auto">
+          <div class="mock-body">
+            <div class="mock-card" style="display:flex;flex-direction:column;gap:8px">
+              <b style="font-size:.875rem">Эмзэг байдал бүртгэх</b>
+              <small style="color:var(--muted);font-weight:600">ЕРӨНХИЙ МЭДЭЭЛЭЛ</small>
+              <div class="mock-row"><div class="mock-field"><small>Эмзэг байдлын нэр *</small><div class="mock-input">…</div></div><div class="mock-field"><small>CVE</small><div class="mock-input">CVE-YYYY-NNNN</div></div></div>
+              <div class="mock-row"><div class="mock-field"><small>Илрүүлсэн эх сурвалж</small><div class="mock-input">NVD, CISA KEV, MN-CERT…</div></div><div class="mock-field"><small>Мэдээлсэн огноо</small><div class="mock-input">өнөөдөр</div></div></div>
+              <small style="color:var(--muted);font-weight:600">ЭРСДЭЛИЙН ҮНЭЛГЭЭ</small>
+              <div class="mock-row"><div class="mock-field mock-hl"><small>CVSS оноо * <span class="mock-callout">!</span></small><div class="mock-input">9.8 → <span class="mock-pill red" style="margin-left:6px">Critical</span></div></div><div class="mock-field"><small>Засварлах хугацаа</small><div class="mock-input">автоматаар</div></div></div>
+              <div class="mock-row" style="justify-content:flex-end"><span class="mock-btn">Болих</span><span class="mock-btn primary">Бүртгэх</span></div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Зураг 5. Бүртгэх маягт — CVSS оноо оруулахад түвшин ба засварлах хугацаа автоматаар гарна</figcaption>
+      </figure>
+      <ol class="guide-steps">
+        <li>Жагсаалтын дээрх <span class="ui primary">Эмзэг байдал бүртгэх</span> товчийг дарна.</li>
+        <li><b>Ерөнхий мэдээлэл</b> (нэр, CVE, эх сурвалж, холбоос, огноо, тайлбар), <b>Эрсдэлийн үнэлгээ</b> (CVSS оноо, нөлөөлөл, үндэслэл), <b>Засварлах зөвлөмж</b>-ийг бөглөнө. Од (*) тэмдэгтэй талбар заавал.</li>
+        <li><span class="ui primary">Бүртгэх</span> дарна. <span class="ui">Хариуцагч сонгох</span> цонх нээгдэнэ — бүртгэлийг хянаж <b>инженер томилох хариуцагчийг</b> нэрээр хайж сонгоод <span class="ui primary">Бүртгэх</span> дарна.</li>
+        <li>Бүртгэл <span class="mock-pill blue">Шинэ</span> төлөвтэй үүсч, IT-ийн даргын оронд сонгосон хариуцагчид и-мэйл очно. Дугаар нь <b>VUL-ОН-NNNN</b> хэлбэртэй.</li>
+      </ol>
+      <p>Хөрөнгийг энд оруулахгүй — инженер 3-р алхамд бөглөнө. Бүртгэлээ засах бол дэлгэрэнгүй хуудасны <span class="ui">⋯</span> → <span class="ui">Бүртгэл засах</span>.</p>
+
+      <h3>2. Инженер томилох <span class="guide-roles"><span class="guide-role" data-r="it_head">Хариуцагч (IT-ийн даргын оронд)</span></span></h3>
+      <ol class="guide-steps">
+        <li><span class="ui">Миний хийх ажил</span> табаас танд хянуулахаар ирсэн <span class="mock-pill blue">Шинэ</span> бүртгэлийг нээнэ.</li>
+        <li><span class="ui primary">Инженер томилох</span> → <span class="ui">Хариуцах инженер</span>-ийг сонгоод <span class="ui primary">Томилох</span>. Инженерт и-мэйл очно. Шаардлагатай бол дараа нь <span class="ui">Инженер солих</span>-оор сольж болно.</li>
+        <li>Мэдээлэл дутуу бол <span class="ui">Буцаах</span> дарж тайлбар бичнэ — бүртгэл бүртгэсэн InfoSec-д <span class="mock-pill amber">Буцаасан</span> төлөвтэй очих ба тэр засаад <span class="ui">Засаад дахин илгээх</span> дарна.</li>
+        <li>Бүртгэх үед сонгосон хариуцагч тухайн бүртгэлд IT-ийн даргын үүргийг гүйцэтгэнэ. (Хариуцагч сонгоогүй, өмнө бүртгэгдсэн бүртгэлийг IT-ийн дарга өмнөх журмаар томилно.)</li>
+      </ol>
+
+      <h3>3. Хөрөнгө ба нөлөөллийн үнэлгээ <span class="guide-roles"><span class="guide-role" data-r="engineer">Инженер</span></span></h3>
+      <ol class="guide-steps">
+        <li>Танд томилогдсон бүртгэлийг нээгээд <span class="ui primary">Мэдээлэл бөглөх</span> дарна.</li>
+        <li><b>Хөрөнгө ба хариуцлага:</b> нөлөөлж болзошгүй хөрөнгө / систем, эзэмшигч, ашиглагдаж байгаа эсэх, манай орчинд байгаа эсэх, халдлагад өртсөн шинж тэмдэг.</li>
+        <li><b>Үнэлгээ:</b> хамрах хүрээ, одоогийн хувилбар, интернэтэд нээлттэй эсэх, patch гарсан эсэх, шалгасан арга, <b>нотолгоо</b> (зураг, Excel, Word, PDF, TXT), дүгнэлт.</li>
+        <li>Дуусаагүй бол <span class="ui">Ноорог хадгалах</span>; бэлэн болмогц <span class="ui primary">Илгээх</span> — бүртгэл InfoSec-ийн эрсдэлийн үнэлгээнд шилжинэ.</li>
+      </ol>
+      <div class="guide-warn">«Ашиглагдсан шинж тэмдэг илэрсэн үү?» гэдэгт <b>Тийм</b> гэж хариулбал InfoSec болон IT-ийн даргад <b>яаралтай</b> и-мэйл очно. Энэ тохиолдолд <a href="#incidents">Зөрчлийн бүртгэл</a>-д зөрчил бүртгэх шаардлагатай.</div>
+
+      <h3>4. Эрсдэлийн үнэлгээ ба шийдвэр <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span></span></h3>
+      <ol class="guide-steps">
+        <li><span class="ui primary">Эрсдэлийн үнэлгээ</span> дарна.</li>
+        <li><b>«Хөрөнгөд нөлөөлсөн эсэх»</b> = <i>Үгүй</i> бол <span class="ui">Нөлөөллийн тайлбар</span> бичээд <span class="ui primary">Нөлөөлөөгүй — хаах</span>.</li>
+        <li><i>Тийм</i> бол <b>Аюул</b>, нөлөөллийн <b>8 шалгуур</b> (тус бүр 1–5) болон <b>Магадлал</b> (1–5)-ыг оруулна. <b>Эрсдэл = хамгийн өндөр нөлөөлөл × магадлал</b> бөгөөд 5×5 матриц дээр тодорч харагдана.</li>
+        <li><b>Эрсдэлийн шийдвэр</b>-ээ сонгоно (Бууруулах / Шилжүүлэх / Зайлсхийх / Хүлээн зөвшөөрөх). Бууруулахаас бусад тохиолдолд <span class="ui">Шийдвэрийн үндэслэл</span> заавал. Хүлээн зөвшөөрөхөд <b>хүчинтэй хугацаа (хүртэл)</b> заавал.</li>
+        <li><span class="ui primary">Шийдвэр батлах</span> (эсвэл түр <span class="ui">Ноорог хадгалах</span>).</li>
+      </ol>
+      <div class="guide-tip">Эрсдэлийн үнэлгээг Critical — 1, High — 3, бусад — 5 ажлын өдрийн дотор хийнэ. Энэ хугацаанд засварлах SLA зогсохгүй.</div>
+
+      <h3>5. Эрсдэл хүлээн зөвшөөрөх <span class="guide-roles"><span class="guide-role" data-r="cto">CTO</span></span></h3>
+      <ol class="guide-steps">
+        <li><span class="mock-pill amber">CTO-ийн зөвшөөрөл хүлээж буй</span> бүртгэлийг нээгээд <span class="ui primary">Эрсдэл хүлээн зөвшөөрөх эсэх</span> дарна.</li>
+        <li><span class="ui primary">Зөвшөөрөх</span> — бүртгэл заасан хугацаа хүртэл «Эрсдэл хүлээн зөвшөөрсөн» болно. Хугацаа дуусахад автоматаар эрсдэлийн үнэлгээнд буцна.</li>
+        <li><span class="ui">Татгалзах</span> — тайлбар заавал; InfoSec-ийн эрсдэлийн үнэлгээнд буцна.</li>
+      </ol>
+      <p>Өөрийн хүсэлтийг өөрөө батлах боломжгүй.</p>
+
+      <h3>6. Засвар ба түр хамгаалалт <span class="guide-roles"><span class="guide-role" data-r="engineer">Инженер</span></span></h3>
+      <p><span class="ui primary">Засвар / түр хамгаалалт</span> дарж дараахаас сонгоно:</p>
+      <ul>
+        <li><b>Төлөвлөгөө хадгалах</b> — засварын төлөвлөгөө, товлосон огноог хадгална (төлөв өөрчлөгдөхгүй).</li>
+        <li><b>Засвар хийсэн — баталгаажуулалтад илгээх</b> — авсан арга хэмжээ, өөрчлөлтийн дугаар (Change ref.), зассан огноо заавал.</li>
+        <li><b>Түр хамгаалалт (нөхөх хяналт) хэрэгжүүлсэн</b> — хамгаалалтын тайлбар, хүчинтэй хугацаа заавал. Дараа нь <span class="ui">Засвар руу шилжүүлэх</span>-ээр бүрэн засварыг үргэлжлүүлнэ.</li>
+        <li><b>Засварлах боломжгүй — дахин үнэлгээнд буцаах</b> — шалтгаан заавал.</li>
+      </ul>
+      <p>«Зайлсхийх» шийдвэр гарсан бол <span class="ui primary">Систем зогсоосныг баталгаажуулах</span> дарж хийсэн ажлаа бичнэ.</p>
+
+      <h3>7. Баталгаажуулж хаах <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span></span></h3>
+      <ol class="guide-steps">
+        <li><span class="ui primary">Баталгаажуулах</span> дарна.</li>
+        <li><b>Засагдсан — баталгаажуулж хаах</b>: баталгаажуулалтын тэмдэглэл, хаалтын тайлбар, үлдэгдэл эрсдэл, эрсдэлийн төлөвийг бөглөнө. Бүртгэл <span class="mock-pill green">Хаагдсан</span> болж IT-ийн дарга, CTO-д мэдэгдэнэ.</li>
+        <li>Эсвэл <b>Түр хамгаалалт хэрэгжсэн</b> / <b>Засагдаагүй — засвар руу буцаах</b>.</li>
+      </ol>
+      <p>Засвар хийсэн инженер өөрийн ажлыг баталгаажуулах боломжгүй («ажлын хуваарилалт»). «Зайлсхийх» бүртгэлийг инженер баталгаажуулсны дараа InfoSec <span class="ui primary">Хянаж хаах</span> дарна.</p>
+
+      <h3>Засварлах хугацаа (SLA)</h3>
+      <div class="guide-table-wrap"><table class="guide-table">
+        <thead><tr><th>Түвшин</th><th>CVSS</th><th>Засварлах хугацаа*</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mock-pill red">Critical</span></td><td>9.0 – 10.0</td><td>5 хоног</td></tr>
+          <tr><td><span class="mock-pill amber">High</span></td><td>7.0 – 8.9</td><td>30 хоног</td></tr>
+          <tr><td><span class="mock-pill blue">Medium</span></td><td>4.0 – 6.9</td><td>60 хоног</td></tr>
+          <tr><td><span class="mock-pill green">Low</span></td><td>0.1 – 3.9</td><td>90 хоног</td></tr>
+        </tbody>
+      </table></div>
+      <p class="muted">* Анхны утга; InfoSec Тохиргоо → SLA-аас өөрчилж болно. Хугацаа мэдээлсэн огнооноос тоологдоно.</p>
+      <p>Жагсаалтад хугацааны төлөв: <span class="mock-pill red">Хугацаа хэтэрсэн</span> <span class="mock-pill amber">Хугацаа дөхсөн</span> <span class="mock-pill green">Хугацаандаа</span>.</p>
+
+      <h3>Жагсаалт, хайлт, экспорт</h3>
+      <ul>
+        <li>Табууд: <span class="ui">Миний хийх ажил</span> · <span class="ui">Бүгд</span>. Хайлт: ID, нэр, CVE эсвэл хөрөнгө.</li>
+        <li>Шүүлтүүр: <b>Түвшин</b>, <b>Төлөв</b>, <b>Хугацааны төлөв</b>, <b>Хариуцагч</b>. <span class="ui">Цэвэрлэх</span> — бүгдийг арилгана.</li>
+        <li>Экспорт (эрхтэй бол): <span class="ui">Excel (.xlsx)</span> эсвэл <span class="ui">CSV (.csv)</span> — одоогийн шүүлтүүрийн үр дүнг татна.</li>
+        <li>Дэлгэрэнгүй хуудасны дээд хэсэгт <b>«Таны ээлж»</b> эсвэл <b>«Дараагийн алхам»</b> гэж харагдах тул юу хийхээ тэндээс шууд мэднэ.</li>
+      </ul>
+
+      <h3>Нотлох баримт, сэтгэгдэл, түүх</h3>
+      <ul>
+        <li><span class="ui">⋯</span> → <span class="ui">Нотлох баримт хавсаргах</span> — нэг удаад 10 хүртэл файл (PDF, Word, Excel, зураг, TXT, ZIP гэх мэт), нэг файл <b>10 МБ</b> хүртэл.</li>
+        <li><span class="ui">Сэтгэгдэл</span> — бүртгэлд тэмдэглэл үлдээнэ. Сэтгэгдлийг засах, устгах боломжгүй.</li>
+        <li><b>«Түүх»</b> карт — хэн, хэзээ, ямар үйлдэл хийснийг бүрэн харуулна.</li>
+        <li><span class="ui">⋯</span> → <span class="ui">Холбоос хуулах</span> — бүртгэлийн холбоосыг хамт олонтойгоо хуваалцах.</li>
+      </ul>
+
+      <h3>Орлон гүйцэтгэгч</h3>
+      <p>InfoSec, IT-ийн дарга эсвэл CTO чөлөө авсан үед InfoSec тухайн үүргийг өөр ажилтанд <b>хугацаатайгаар</b> шилжүүлж болно. Хугацааны турш орлон гүйцэтгэгч тухайн үүргийн бүх эрх, үйлдэл, и-мэйл мэдэгдлийг авах ба өмнө үүссэн бүртгэлүүдийг ч харна. Хугацаа дуусахад эрх автоматаар цуцлагдана.</p>
+    </section>
+
+    <!-- 12. VulnReg settings -->
+    <section class="panel guide-section" id="vulnreg-settings" data-roles="infosec">
+      <h2 data-short="VulnReg тохиргоо"><span class="guide-num"></span>Эмзэг байдлын бүртгэлийн тохиргоо <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span></span></h2>
+      <p>Зүүн цэсний <span class="ui">Тохиргоо</span>. Зөвхөн InfoSec (эсвэл InfoSec-ийн орлон гүйцэтгэгч) нээнэ. Өөрчлөлт бүр <b>Аудит</b> табд хадгалагдана.</p>
+      <div class="guide-table-wrap"><table class="guide-table">
+        <thead><tr><th>Таб</th><th>Зориулалт</th></tr></thead>
+        <tbody>
+          <tr><td>Эрхтэй хэрэглэгчид</td><td>VulnReg үүрэгтэй хэрэглэгчдийн жагсаалт (харах). Үүргийг Супер админ <i>Хэрэглэгчид → Засах</i>-аас олгоно.</td></tr>
+          <tr><td>Хандах эрх</td><td>Үүрэг бүрт: бүртгэл рүү хандах, бүх бүртгэлийг харах, экспорт, хяналтын самбар. Чагтлаад <span class="ui primary">Хадгалах</span>.</td></tr>
+          <tr><td>Орлон гүйцэтгэгч</td><td><b>Шинэ томилгоо:</b> Үүрэг → Орлуулагдах ажилтан → Орлон гүйцэтгэгч → Эхлэх / Дуусах огноо → Тайлбар → <span class="ui primary">Томилох</span>. Цуцлах бол <span class="ui">Цуцлах</span>. Өөрийгөө томилох боломжгүй.</td></tr>
+          <tr><td>Эрсдэлийн матриц</td><td>8 шалгуурын нэр, Бага / Дунд түвшний дээд хязгаар.</td></tr>
+          <tr><td>Маягтын бүтэц</td><td>Бүртгэх (InfoSec), Инженерийн, Эрсдэлийн үнэлгээ (InfoSec) маягтын хэсэг, талбар, дарааллыг өөрчлөх, нэмэлт талбар нэмэх, нуух. Системийн талбарыг устгах боломжгүй.</td></tr>
+          <tr><td>SLA</td><td>CVSS хязгаар ба засварлах хоног; «Хугацаа дөхсөн» сануулгын босго. Шинэ утга зөвхөн шинэ бүртгэлд хэрэгжинэ — нээлттэй бүртгэлд хэрэгжүүлэх бол <span class="ui">Дахин тооцоолох</span> (эхлээд урьдчилан харуулна, гараар оруулсан хугацааг хадгална).</td></tr>
+          <tr><td>Аудит</td><td>Тохиргооны сүүлийн 100 өөрчлөлт: хэн, хэзээ, өмнөх ба шинэ утга.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 13. Incidents -->
+    <section class="panel guide-section" id="incidents" data-roles="incident_view superadmin infosec it_head cto">
+      <h2 data-short="Зөрчлийн бүртгэл"><span class="guide-num"></span>Зөрчлийн бүртгэл <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span><span class="guide-role" data-r="infosec">InfoSec</span><span class="guide-role" data-r="it_head">IT-ийн дарга</span><span class="guide-role" data-r="cto">CTO</span></span></h2>
+      <p>Мэдээллийн аюулгүй байдлын зөрчлийг бүртгэж, хариу арга хэмжээг хугацаанд нь авч буйг хянана. Нээх: <span class="ui">Бүртгэл ▾</span> → <span class="ui">Зөрчлийн бүртгэл</span>.</p>
+      <ul>
+        <li><b>Бүртгэх, засах, хариу өгөх, устгах:</b> Супер админ, InfoSec.</li>
+        <li><b>Зөвхөн харах:</b> IT-ийн дарга, CTO.</li>
+      </ul>
+
+      <figure class="guide-figure">
+        <div class="mock">
+          <div class="mock-body">
+            <div class="mock-row"><div class="mock-stat"><small>Нийт зөрчил</small><strong>—</strong></div><div class="mock-stat"><small>Шинэ</small><strong>—</strong></div><div class="mock-stat"><small>Хугацаа хэтэрсэн</small><strong>—</strong></div><div class="mock-stat"><small>Маш өндөр</small><strong>—</strong></div></div>
+            <div class="mock-card mock-row" style="justify-content:space-between">
+              <div><b>INC-ОН-NNN</b> · Систем / Байршил<br><small style="color:var(--muted)">Бүртгэсэн огноо · Бүртгэсэн</small></div>
+              <div class="mock-row"><span class="mock-pill red">Өндөр</span><span class="mock-pill blue">Нээлттэй</span><span class="mock-pill amber">8ц үлдсэн</span><span class="mock-btn primary mock-hl">Хариу өгөх<span class="mock-callout">!</span></span></div>
+            </div>
+          </div>
+        </div>
+        <figcaption>Зураг 6. Зөрчлийн карт — зэрэг, төлөв, үлдсэн хугацаа, «Хариу өгөх» товч (жишээ дүрслэл)</figcaption>
+      </figure>
+
+      <h3>Зөрчил бүртгэх</h3>
+      <ol class="guide-steps">
+        <li><span class="ui primary">Шинэ зөрчил</span> дарна.</li>
+        <li><span class="ui">Огноо / Илэрсэн</span> (заавал), үүссэн огноо, мэдээлсэн, систем / байршил, төрөл, <b>Severity</b> (Бага / Дунд / Өндөр / Маш Өндөр), L1–L3 шат, Root Cause, тайлбарыг бөглөнө.</li>
+        <li><span class="ui primary">Хадгалах</span>. Зөрчил <span class="mock-pill blue">Нээлттэй</span> төлөвтэй үүсч хариу өгөх хугацаа эхэлнэ.</li>
+      </ol>
+
+      <h3>Хариу өгөх хугацаа</h3>
+      <div class="guide-table-wrap"><table class="guide-table">
+        <thead><tr><th>Severity</th><th>Хариу арга хэмжээ авах хугацаа (бүртгэснээс)</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mock-pill red">Маш Өндөр</span></td><td>6 цаг</td></tr>
+          <tr><td><span class="mock-pill red">Өндөр</span></td><td>12 цаг</td></tr>
+          <tr><td><span class="mock-pill amber">Дунд</span></td><td>48 цаг</td></tr>
+          <tr><td><span class="mock-pill green">Бага</span></td><td>72 цаг</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Төлөвийн урсгал</h3>
+      <div class="flow">
+        <div class="flow-step"><b>Нээлттэй</b>Хариу хүлээгдэж буй</div><div class="flow-arrow">→</div>
+        <div class="flow-step"><b>Хариу арга хэмжээ авсан</b><span class="ui">Хариу өгөх</span> → авсан арга хэмжээг бичиж <span class="ui">Нэмэх</span></div><div class="flow-arrow">→</div>
+        <div class="flow-step end"><b>Хаагдсан</b>«Хаасан» огноо бөглөгдсөн</div>
+      </div>
+      <div class="guide-warn">Хугацаандаа хариу арга хэмжээ бүртгээгүй зөрчил <b>автоматаар хаагдаж</b>, «Хугацаандаа хариу өгөөгүй» гэж тэмдэглэгдэнэ. Хугацааг картын «… үлдсэн» / «… хэтэрсэн» шошгоор хянаарай.</div>
+      <ul>
+        <li><b>Severity өөрчлөх:</b> картыг дэлгээд <span class="ui">Зэрэг өөрчлөх</span> — шалтгаан заавал.</li>
+        <li><b>Талбар засах:</b> <span class="ui">Талбар засах</span>. Бүх өөрчлөлт картын <b>«Түүх»</b>-д хадгалагдана.</li>
+        <li><b>Шүүлтүүр:</b> ID / гарчгаар хайх, Severity, Төлөв, SLA (Хугацаа хэтэрсэн / хэтрээгүй).</li>
+      </ul>
+    </section>
+
+    <!-- 14. FAQ -->
+    <section class="panel guide-section" id="faq" data-roles="all">
+      <h2 data-short="Түгээмэл асуулт"><span class="guide-num"></span>Түгээмэл асуулт ба тусламж</h2>
+      <div class="guide-table-wrap"><table class="guide-table">
+        <thead><tr><th>Асуудал</th><th>Шийдэл</th></tr></thead>
+        <tbody>
+          <tr><td>Нэвтрэх үед «нууц үг буруу» гэнэ</td><td>Том, жижиг үсгээ шалгана уу. Мартсан бол «Нууц үг мартсан уу?»-ээр шинэчилнэ.</td></tr>
+          <tr><td>«Хандах эрхгүй» гэсэн хуудас гарсан</td><td>Таны и-мэйл системд бүртгэлгүй эсвэл тухайн хэсэгт эрх олгогдоогүй байна. Супер админд хандана уу.</td></tr>
+          <tr><td>Цэсэнд «Бүртгэл ▾» харагдахгүй байна</td><td>Эмзэг байдлын / зөрчлийн бүртгэлийн үүрэг танд олгогдоогүй. Супер админаас хүснэ үү.</td></tr>
+          <tr><td>Хөрөнгийн талбар саарал, засагдахгүй</td><td>Тухайн талбарыг зөвхөн админ өөрчилнө (Баганын эрх).</td></tr>
+          <tr><td>Өөр хэлтсийн хөрөнгийг харах хэрэгтэй</td><td>Супер админ таны хэрэглэгчийн «Хэлтсийн хандах эрх»-д Унших эрх олгоно.</td></tr>
+          <tr><td>Файл оруулахад алдаа гарна</td><td>Файлын хэмжээ 10 МБ-аас бага, зөвшөөрөгдсөн төрөлтэй эсэхийг шалгана уу.</td></tr>
+          <tr><td>Системээс гэнэт гарчихлаа</td><td>60 минут идэвхгүй байсан тул аюулгүй байдлын үүднээс автоматаар гаргасан. Дахин нэвтэрнэ үү.</td></tr>
+        </tbody>
+      </table></div>
+      <p>Бусад асуудлаар системийн админ (Супер админ) эсвэл Мэдээллийн аюулгүй байдлын (InfoSec) албанд хандана уу.</p>
+    </section>
+
+
+    <a href="#" class="guide-back-top" onclick="window.scrollTo({top:0,behavior:'smooth'});return false;">↑ Дээш буцах</a>
+  </div>
+</div>
+
+<script>
+(function () {
+  var ME = {{ME_ROLES_JSON}};
+  var sections = Array.prototype.slice.call(document.querySelectorAll(".guide-section"));
+  var toc = document.getElementById("guide-toc-list");
+  sections.forEach(function (sec, i) {
+    var h = sec.querySelector("h2");
+    var num = h.querySelector(".guide-num");
+    if (num) num.textContent = i + 1;
+    var roles = (sec.getAttribute("data-roles") || "all").split(" ");
+    var mine = roles.indexOf("all") >= 0 || roles.some(function (r) { return ME.indexOf(r) >= 0; });
+    sec.querySelectorAll(".guide-role[data-r]").forEach(function (c) {
+      if (ME.indexOf(c.getAttribute("data-r")) >= 0 || c.getAttribute("data-r") === "all") c.classList.add("me");
+    });
+    var a = document.createElement("a");
+    a.href = "#" + sec.id;
+    a.textContent = h.getAttribute("data-short") || h.childNodes[h.childNodes.length - 1].textContent.trim();
+    if (!mine) { a.classList.add("is-dim"); a.title = "Таны эрхэд хамаарахгүй байж болно"; }
+    var li = document.createElement("li"); li.appendChild(a); toc.appendChild(li);
+    sec._tocLink = a;
+  });
+  // Highlight the section in view.
+  if ("IntersectionObserver" in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          toc.querySelectorAll("a.active").forEach(function (x) { x.classList.remove("active"); });
+          e.target._tocLink.classList.add("active");
+        }
+      });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    sections.forEach(function (s) { io.observe(s); });
+  }
+  // Simple full-text filter over sections.
+  var input = document.getElementById("guide-search"), empty = document.getElementById("guide-empty");
+  input.addEventListener("input", function () {
+    var q = input.value.trim().toLowerCase(), shown = 0;
+    sections.forEach(function (s) {
+      var hit = !q || s.textContent.toLowerCase().indexOf(q) >= 0;
+      s.hidden = !hit; s._tocLink.parentNode.hidden = !hit; if (hit) shown++;
+    });
+    empty.style.display = shown ? "none" : "block";
+  });
+})();
+</script>

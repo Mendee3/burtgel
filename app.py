@@ -2413,6 +2413,7 @@ def render_page(title, user, content, notice="", conn=None):
       </a>
       <ul class="nav-links">{nav_links(user, conn)}</ul>
       <div class="nav-user">
+        <a class="button-link ghost nav-guide" href="/guide" title="Хэрэглэгчийн гарын авлага">? Гарын авлага</a>
         <button type="button" class="button-link ghost theme-toggle" id="theme-toggle" onclick="toggleTheme()">☀ Цайвар</button>
         <div class="user-chip">
           <strong>{display}</strong>
@@ -2992,6 +2993,33 @@ def _audit_sidebar(conn):
         + ("".join(items) if items else '<p class="muted">Одоогоор бичлэг алга.</p>')
         + "</div>"
     )
+
+
+GUIDE_TEMPLATE = BASE_DIR / "templates" / "guide.html"
+GUIDE_ROLE_LABELS = {"superadmin": "Супер админ", "admin": "Хэлтсийн админ", "user": "Хэрэглэгч",
+                     "infosec": "InfoSec", "it_head": "IT-ийн дарга", "engineer": "Инженер", "cto": "CTO"}
+
+
+def guide_page(conn, user):
+    """User guide. Static content from templates/guide.html; sections carry data-roles so the page can mark
+    which ones apply to the viewer (nothing is hidden — everyone may read the whole guide)."""
+    role = user_role(user)
+    roles = [role]
+    try:
+        ensure_vulnerabilities_table(conn)
+        vu = vuln_user(conn, user)
+        roles += sorted(_vroles(vu))
+        if vuln_perm(vu, "access"):
+            roles.append("vuln_access")
+        if incident_access(conn, user)[0]:
+            roles.append("incident_view")
+    except Exception:
+        pass
+    me = ", ".join(GUIDE_ROLE_LABELS[r] for r in roles if r in GUIDE_ROLE_LABELS)
+    body = (GUIDE_TEMPLATE.read_text(encoding="utf-8")
+            .replace("{{ME_ROLES_JSON}}", json.dumps(roles))
+            .replace("{{ME_ROLES_TEXT}}", html.escape(me)))
+    return render_page("Хэрэглэгчийн гарын авлага", user, body, conn=conn)
 
 
 def dashboard_page(conn, user, notice=""):
@@ -5437,6 +5465,8 @@ _VULN_EXTRA_DDL = """
 """
 _VULN_EXTRA_COLUMNS = (
     ("status", "TEXT NOT NULL DEFAULT 'new'"),
+    # Responsible person chosen at registration: acts as the IT Head for this record (review, return, assign engineer).
+    ("reviewer_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
     ("vuln_custom", "TEXT NOT NULL DEFAULT '{}'"),
     ("asset_id", "INTEGER REFERENCES assets(id) ON DELETE SET NULL"),
     ("assignee_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
@@ -5688,7 +5718,7 @@ VULN_ACTIONS = {
 VULN_ROLES = ("infosec", "it_head", "engineer", "cto")
 VULN_ROLE_LABELS = {"infosec": "Мэдээллийн аюулгүй байдал (InfoSec)", "it_head": "IT-ийн дарга (IT Head)",
                     "engineer": "Инженер", "cto": "CTO", "": "Хандах эрхгүй"}
-VULN_SUBSTITUTABLE_ROLES = ("it_head", "cto")
+VULN_SUBSTITUTABLE_ROLES = ("infosec", "it_head", "cto")
 # users.vuln_role holds zero or more roles as a comma-separated list in VULN_ROLES order, e.g. "it_head,engineer".
 _VULN_HAS_ROLE_SQL = "(',' || {col} || ',') LIKE ('%,' || ? || ',%')"
 
@@ -5767,6 +5797,15 @@ def vuln_user(conn, user):
     u["_vrole"] = own
     u["_vroles"] = roles
     u["_vsubs"] = [{"role": s["role"], "until": s["end_date"]} for s in subs]
+    # Principals this user currently stands in for: their per-record responsibilities pass to the substitute too.
+    u["_vsub_for"] = sorted({s["principal_id"] for s in subs if s["role"] in VULN_SUBSTITUTABLE_ROLES})
+    rids = [u["id"]] + [i for i in u["_vsub_for"] if i != u["id"]]
+    u["_vreviewer"] = bool(conn.execute(
+        f"SELECT 1 FROM vulnerabilities WHERE deleted_at = '' AND reviewer_id IN ({','.join('?' * len(rids))}) LIMIT 1",
+        rids).fetchone())
+    if u["_vreviewer"]:
+        # Responsible person for some record (acts as IT Head for it): may open the register; scope limits what they see.
+        eff["access"] = True
     u["_vperms"] = eff
     return u
 
@@ -5833,6 +5872,7 @@ VULN_FILE_MAX_BYTES = 20 * 1024 * 1024
 VULN_FILE_MAX_PER_UPLOAD = 10
 VULN_PAGE_SIZE = 10  # fixed number of rows per page on the vulnerability list
 VULN_FIELD_LABELS = {
+    "reviewer_id": "Хариуцагч (инженер томилох)",
     "title": "Нэр", "cve_id": "CVE", "source": "Илрүүлсэн эх сурвалж", "source_url": "Эх сурвалжийн холбоос",
     "published_date": "Нийтэлсэн огноо", "reported_date": "Мэдээлсэн огноо", "description": "Тайлбар",
     "scope": "Хамрах хүрээ", "verification_method": "Нөлөөллийг шалгах арга",
@@ -5946,10 +5986,40 @@ def vuln_can_assign(user):
     return vuln_has_role(user, "it_head")
 
 
+def _vuln_reviewer_ids(user):
+    """User ids whose records this user handles as responsible person: themselves + principals they substitute."""
+    if not user:
+        return []
+    try:
+        extra = list(user["_vsub_for"])
+    except (KeyError, IndexError, TypeError):
+        extra = []
+    return [user["id"]] + [i for i in extra if i != user["id"]]
+
+
+def _vuln_is_reviewer(user, row):
+    """The responsible person chosen at registration (or their active substitute): the IT Head for this record."""
+    return bool(row["reviewer_id"]) and row["reviewer_id"] in _vuln_reviewer_ids(user)
+
+
+def vuln_is_any_reviewer(user):
+    try:
+        return bool(user["_vreviewer"])
+    except (KeyError, IndexError, TypeError):
+        return False
+
+
 def vuln_can_assign_record(user, row):
-    """«Инженер томилох / солих» on a record: IT Head (own role or active substitute) only — no Superadmin bypass,
-    and never the engineer currently assigned to that record."""
-    return vuln_is_it_head(user) and not _vuln_is_assignee(user, row)
+    """«Инженер томилох / солих» on a record — no Superadmin bypass, and never the engineer currently assigned.
+
+    Records registered with a responsible person: only that person (or their substitute) — they act as the IT Head.
+    Older records without one: the IT Head (own role or active substitute), as before.
+    """
+    if _vuln_is_assignee(user, row):
+        return False
+    if row["reviewer_id"]:
+        return _vuln_is_reviewer(user, row)
+    return vuln_is_it_head(user)
 
 
 def vuln_can_edit_record(user, row):
@@ -6146,6 +6216,8 @@ def _vuln_notify_it_heads(conn, actor, vuln_id, resubmitted=False, ids=None):
 def _vuln_notify_closed(conn, actor, row, status):
     """Step 8: once a finding is closed, notify the IT Head and the CTO (and their substitutes)."""
     users = list(_vuln_role_users(conn, "it_head")) + list(_vuln_role_users(conn, "cto"))
+    if row["reviewer_id"]:
+        users.append(_vuln_user_by_id(conn, row["reviewer_id"]))  # acted as the IT Head for this record
     _vuln_notify(users, f"[Эмзэг байдал] {_vuln_ref(row)} хаагдлаа", [
         f"{_vuln_user_label(actor)} дараах эмзэг байдлын бүртгэлийг хаалаа.", "",
         f"{_vuln_ref(row)} — {row['title']}",
@@ -6155,7 +6227,7 @@ def _vuln_notify_closed(conn, actor, row, status):
 
 
 def _vuln_insert(conn, user, values, group_id=None):
-    """Register a finding. No assignee here: the IT Head reviews it and assigns an engineer (status stays New)."""
+    """Insert one finding in status New; vuln_api_create then assigns the chosen responsible person."""
     ts = now_utc().isoformat()
     cur = conn.execute(
         """INSERT INTO vulnerabilities(cve_id, title, source, source_url, published_date, reported_date,
@@ -6201,8 +6273,11 @@ def _vuln_scope(user):
     if vuln_perm(user, "view_all"):
         return "v.deleted_at = ''", []
     parts, args = ["v.assignee_id = ?", "v.created_by = ?"], [user["id"], user["id"]]
+    rids = _vuln_reviewer_ids(user)
+    parts.append(f"v.reviewer_id IN ({','.join('?' * len(rids))})")
+    args += rids
     if vuln_is_it_head(user):
-        parts.append("v.status = 'new'")
+        parts.append("(v.status = 'new' AND v.reviewer_id IS NULL)")
     if vuln_has_role(user, "cto"):
         parts.append("v.status = 'pending_cto'")
     return f"v.deleted_at = '' AND ({' OR '.join(parts)})", args
@@ -6221,13 +6296,14 @@ _VULN_FROM_SQL = f"""
     LEFT JOIN users cu ON cu.id = v.created_by
     LEFT JOIN users au ON au.id = v.assignee_id
     LEFT JOIN users ru ON ru.id = v.risk_accept_approver_id
+    LEFT JOIN users rv ON rv.id = v.reviewer_id
 """
 _VULN_SELECT_SQL = f"""
     SELECT v.*, d.name AS department_name, COALESCE(NULLIF(v.affected_asset, ''), a.asset_name) AS asset_name, a.asset_type, a.owner AS asset_owner,
            a.custodian AS asset_custodian, a.location AS asset_location, a.asset_category AS asset_category,
            ad.name AS asset_department_name,
            {_uname_sql('cu')} AS created_by_name, {_uname_sql('au')} AS assignee_name,
-           {_uname_sql('ru')} AS risk_approver_name
+           {_uname_sql('ru')} AS risk_approver_name, {_uname_sql('rv')} AS reviewer_name
 """ + _VULN_FROM_SQL
 _VULN_SEV_RANK_SQL = ("CASE lower(v.severity) WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 "
                       "WHEN 'low' THEN 3 WHEN 'none' THEN 4 ELSE 5 END")
@@ -6292,15 +6368,19 @@ def _vuln_int(value):
 def _vuln_todo_sql(user):
     """SQL predicate: records waiting on this user's action (same rules as vuln_available_actions).
 
-    Engineer: assigned records to fill in / remediate / confirm shutdown. IT Head: new records to review and assign.
+    Engineer: assigned records to fill in / remediate / confirm shutdown. Responsible person (acting IT Head): new
+    records to review and assign (the IT Head for older records registered without one).
     InfoSec: risk assessment, verification, closing a confirmed shutdown, and own returned records. CTO: risk acceptances.
     """
     parts, args = [], []
     parts.append("(v.assignee_id = ? AND (v.status IN ('assigned', 'under_assessment', 'remediation')"
                  " OR (v.status = 'avoidance' AND v.avoid_confirmed_at = '')))")
     args.append(user["id"])
+    rids = _vuln_reviewer_ids(user)
+    parts.append(f"(v.status = 'new' AND v.reviewer_id IN ({','.join('?' * len(rids))}))")
+    args += rids
     if vuln_is_it_head(user):
-        parts.append("v.status = 'new'")
+        parts.append("(v.status = 'new' AND v.reviewer_id IS NULL)")
     if vuln_can_manage(user):
         parts.append("v.status IN ('risk_assessment', 'verification')")
         parts.append("(v.status = 'avoidance' AND v.avoid_confirmed_at <> '')")
@@ -6478,7 +6558,7 @@ def vuln_api_options(conn, user):
     assets = [{"id": r["id"], "name": r["asset_name"], "dept": r["dept"] or "",
                "owner": r["owner"] or "", "custodian": r["custodian"] or ""} for r in asset_rows]
     users = []
-    if vuln_can_manage(user) or vuln_can_assign(user):
+    if vuln_can_manage(user) or vuln_can_assign(user) or vuln_is_any_reviewer(user):
         # Assignee filter + engineer picker: only people who hold a VulnReg role.
         users = [{"id": r["id"], "name": _vuln_user_label(r), "dept": r["dept"] or "", "roles": vuln_roles_of(r)}
                  for r in conn.execute(
@@ -6488,6 +6568,11 @@ def vuln_api_options(conn, user):
     return {
         "departments": departments, "assets": assets, "users": users,
         "engineers": [u for u in users if "engineer" in u["roles"]],
+        # «Хариуцагч сонгох» at registration: any active employee may be chosen.
+        "people": [{"id": r["id"], "name": _vuln_user_label(r), "dept": r["dept"] or ""} for r in conn.execute(
+            """SELECT u.id, u.display_name, u.username, u.email, d.name AS dept FROM users u
+               LEFT JOIN departments d ON d.id = u.department_id WHERE u.is_active = 1
+               ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username)""")] if vuln_can_manage(user) else [],
         "statuses": [{"key": k, "label": VULN_STATUS_LABELS[k]} for k in VULN_STATUS_ORDER],
         "assetForm": _vuln_asset_form_meta(user) if vuln_can_manage(user) else None,
         "sla": vuln_sla(conn),
@@ -6572,6 +6657,8 @@ def vuln_available_actions(user, row):
             # The assigned engineer acts; InfoSec may also maintain the engineer's drafts and resume work.
             ok = (_vuln_is_assignee(user, row) or is_superadmin(user)
                   or (vuln_can_manage(user) and key in ("save_assessment", "save_remediation", "temp_resume")))
+        elif key == "return" and row["reviewer_id"]:
+            ok = _vuln_is_reviewer(user, row)  # the responsible person acts as the IT Head for this record
         else:
             ok = vuln_has_role(user, actor)
         if key == "resubmit" and not vuln_can_edit_record(user, row):
@@ -6697,6 +6784,8 @@ def _vuln_flag_incident(conn, user, row, values):
     note = "Эмзэг байдал ашиглагдсан шинж тэмдэг илэрсэн — Зөрчлийн удирдлагын процессыг эхлүүлэх шаардлагатай."
     _vuln_log(conn, row["id"], user, "incident_flagged", "", "", values.get("as_incident_ref") or "", note)
     users = list(_vuln_role_users(conn, "infosec")) + list(_vuln_role_users(conn, "it_head"))
+    if row["reviewer_id"]:
+        users.append(_vuln_user_by_id(conn, row["reviewer_id"]))  # acted as the IT Head for this record
     lines = [f"{_vuln_user_label(user)} үнэлгээний явцад эмзэг байдал ашиглагдсан шинж тэмдэг (сэжигтэй лог, хандалт) илрүүллээ.",
              "Зөрчлийн удирдлагын процессыг тусад нь эхлүүлнэ үү: " + APP_URL.rstrip("/") + "/incidents/", ""] + _vuln_record_lines(row)
     if values.get("as_incident_ref"):
@@ -6763,8 +6852,13 @@ def vuln_api_action(conn, user, row, form):
 
     elif action == "resubmit":
         _vuln_apply(conn, user, row, {"status": "new"}, note, audit_label=label)
-        after.append(lambda: _vuln_notify_it_heads(conn, user, row["id"], resubmitted=True))
-        msg = "Дахин илгээж, IT-ийн даргад мэдэгдлээ."
+        if row["reviewer_id"]:
+            reviewer = _vuln_user_by_id(conn, row["reviewer_id"])
+            after.append(lambda: _vuln_notify_reviewer(conn, user, reviewer, [row["id"]], resubmitted=True))
+            msg = "Дахин илгээж, хариуцагчид мэдэгдлээ."
+        else:
+            after.append(lambda: _vuln_notify_it_heads(conn, user, row["id"], resubmitted=True))
+            msg = "Дахин илгээж, IT-ийн даргад мэдэгдлээ."
 
     elif action in ("save_assessment", "submit_assessment"):
         values, errors = _vuln_assessment_values(form, row)
@@ -7086,7 +7180,8 @@ def vuln_expire_sweep(conn, force=False):
 
 
 def _vuln_can_upload(user, row):
-    return vuln_can_manage(user) or _vuln_is_assignee(user, row) or vuln_can_assign(user) or vuln_is_cto(user)
+    return (vuln_can_manage(user) or _vuln_is_assignee(user, row) or vuln_can_assign_record(user, row)
+            or vuln_is_cto(user))
 
 
 def _vuln_can_delete_file(user, row, file_row):
@@ -7116,7 +7211,8 @@ def vuln_api_detail(conn, user, row):
             "reason": row["risk_accept_reason"], "until": row["risk_accept_until"],
             "approver": row["risk_approver_name"] or "", "approverId": row["risk_accept_approver_id"],
         } if row["risk_accept_reason"] else None,
-        "createdBy": row["created_by_name"] or "", "createdAt": row["created_at"], "updatedAt": row["updated_at"],
+        "createdBy": row["created_by_name"] or "", "createdAt": row["created_at"],
+        "reviewer": {"id": row["reviewer_id"], "name": row["reviewer_name"] or ""} if row["reviewer_id"] else None, "updatedAt": row["updated_at"],
         "assetInfo": {
             "id": row["asset_id"], "name": row["asset_name"] or "", "type": row["asset_type"] or "",
             "owner": row["asset_owner"] or "", "custodian": row["asset_custodian"] or "",
@@ -7239,11 +7335,19 @@ def _vuln_same(a, b):
 def vuln_api_create(conn, user, form):
     """Step 1 (InfoSec): register a vulnerability with its CVSS and every potentially affected asset.
 
-    One finding is created per asset (same registration group) so the IT Head can assign an engineer to each.
+    One finding is created per asset (same registration group). The registrant picks the responsible person in the
+    «Хариуцагч сонгох» window (any active employee); every finding goes to that person instead of the IT Head
+    (status stays New). For these records the responsible person has exactly the IT Head's duties: review, return,
+    assign the engineer. Everything after that is the unchanged workflow.
     """
     if not vuln_can_manage(user):
         return 403, {"error": "Эрх хүрэлцэхгүй байна."}
     values, errors = _vuln_validate(conn, user, form)
+    raw_reviewer = (form.get("reviewer_id") or "").strip()
+    reviewer = conn.execute("SELECT * FROM users WHERE id = ? AND is_active = 1",
+                            (int(raw_reviewer),)).fetchone() if raw_reviewer.isdigit() else None
+    if not reviewer:
+        errors["reviewer_id"] = "Инженер томилох хариуцагчийг сонгоно уу."
     custom, cerrors = _vuln_custom_parse(conn, "register", form, None, True)
     errors.update(cerrors)
     values["vuln_custom"] = json.dumps(custom, ensure_ascii=False)
@@ -7262,7 +7366,8 @@ def vuln_api_create(conn, user, form):
     if len(extra_ids) > 50:
         errors["extra_asset_ids"] = "Нэг удаад 50-аас ихгүй хөрөнгө."
     if errors:
-        return 422, {"error": "Талбаруудыг шалгана уу.", "fields": errors}
+        msg = errors["reviewer_id"] if list(errors) == ["reviewer_id"] else "Талбаруудыг шалгана уу."
+        return 422, {"error": msg, "fields": errors}
     vuln_id = _vuln_insert(conn, user, values)
     ids = [vuln_id]
     for aid in extra_ids:
@@ -7271,10 +7376,38 @@ def vuln_api_create(conn, user, form):
         ids.append(_vuln_insert(conn, user, dict(values, asset_id=aid, department_id=a["department_id"],
                                                  owner_custodian=f"{o} / {c}" if o and c and o != c else (o or c)),
                                 group_id=vuln_id))
+    name = _vuln_user_label(reviewer)
+    for i in ids:
+        conn.execute("UPDATE vulnerabilities SET reviewer_id = ? WHERE id = ?", (reviewer["id"], i))
+        _vuln_log(conn, i, user, "updated", "reviewer_id", "", name)
     conn.commit()
-    _vuln_notify_it_heads(conn, user, vuln_id, ids=ids)
+    _vuln_notify_reviewer(conn, user, reviewer, ids)
     n = f" ({len(ids)} хөрөнгө)" if len(ids) > 1 else ""
-    return 200, {"id": vuln_id, "ids": ids, "message": f"Эмзэг байдал бүртгэгдэж{n}, IT-ийн даргад мэдэгдэл илгээлээ."}
+    return 200, {"id": vuln_id, "ids": ids,
+                 "message": f"Эмзэг байдал бүртгэгдэж{n}, хариуцагч {name}-д мэдэгдэл илгээлээ."}
+
+
+def _vuln_notify_reviewer(conn, actor, reviewer, ids, resubmitted=False):
+    """Mail the responsible person (and anyone substituting for them today) that records await review."""
+    rows = [conn.execute(f"{_VULN_SELECT_SQL} WHERE v.id = ?", (i,)).fetchone() for i in ids]
+    row = rows[0]
+    today = _vuln_today()
+    subs = conn.execute(
+        """SELECT u.* FROM vuln_substitutes s JOIN users u ON u.id = s.substitute_id
+           WHERE s.principal_id = ? AND s.revoked_at = '' AND u.is_active = 1
+           AND s.start_date <= ? AND s.end_date >= ?""", (reviewer["id"], today, today)).fetchall()
+    what = "засварлаж дахин илгээлээ" if resubmitted else "бүртгэж, таныг хариуцагчаар сонголоо"
+    lines = [
+        f"{_vuln_user_label(actor)} эмзэг байдал {what}.",
+        "Хянаж, нөлөөлөх хөрөнгө бүрт засварлах инженер томилно уу (мэдээлэл дутуу бол буцаана).", "",
+        f"{row['cve_id'] + ' — ' if row['cve_id'] else ''}{row['title']}",
+        f"Түвшин: {VULN_SEV_LABELS.get((row['severity'] or '').lower(), row['severity'])}"
+        + (f" (CVSS {row['cvss_score']:.1f})" if row["cvss_score"] is not None else ""),
+        f"Засварлах хугацаа (SLA): {row['due_date'] or '—'}",
+        "",
+        "Нөлөөлөх хөрөнгө:",
+    ] + [f"  • {_vuln_ref(r)} — {r['asset_name'] or '—'}" for r in rows]
+    _vuln_notify([reviewer] + list(subs), f"[Эмзэг байдал] {_vuln_ref(row)} хянах хүсэлт", lines, row["id"])
 
 
 def vuln_api_update(conn, user, row, form):
@@ -7354,7 +7487,8 @@ def vuln_api_assign(conn, user, row, form):
     """IT Head assigns the responsible engineer for the vulnerability's asset; New/Reopened become Assigned."""
     current = row["status"] or "new"
     if not vuln_can_assign_record(user, row):
-        return 403, {"error": "Хариуцагч томилох эрх зөвхөн IT-ийн даргад байна."}
+        return 403, {"error": "Инженер томилох эрх зөвхөн тухайн бүртгэлийн хариуцагчид байна."
+                     if row["reviewer_id"] else "Хариуцагч томилох эрх зөвхөн IT-ийн даргад байна."}
     if current not in VULN_ASSIGNABLE_STATUSES:
         return 409, {"error": f"«{VULN_STATUS_LABELS[current]}» төлөвтэй бүртгэлд хариуцагч томилох боломжгүй."}
     raw = (form.get("assignee_id") or "").strip()
@@ -7543,8 +7677,8 @@ def vuln_json(start_response, status_code, payload):
 # InfoSec; their values live in vulnerabilities.vuln_custom (JSON {key: value}) and survive field deletion.
 VULN_FORMS_SETTING = "vuln_forms"
 VULN_FORM_KEYS = ("register", "engineer", "risk")
-VULN_FORM_TITLES = {"register": "Эмзэг байдал бүртгэх", "engineer": "Хөрөнгө ба хариуцлага, үнэлгээ (Инженер)",
-                    "risk": "Эрсдэлийн үнэлгээ (MAS-14)"}
+VULN_FORM_TITLES = {"register": "Эмзэг байдал бүртгэх (InfoSec)", "engineer": "Хөрөнгө ба хариуцлага, үнэлгээ (Инженер)",
+                    "risk": "Эрсдэлийн үнэлгээ (InfoSec)"}
 VULN_CUSTOM_TYPES = {"text": "Текст", "textarea": "Урт текст", "number": "Тоо", "date": "Огноо",
                      "select": "Сонголт (жагсаалт)", "yesno": "Тийм / Үгүй", "url": "Холбоос (URL)", "email": "И-мэйл"}
 _VULN_CF_KEY_RE = re.compile(r"^cf_[a-z0-9]{4,24}$")
@@ -7947,10 +8081,8 @@ VULN_REASON_MAX = 2000
 
 
 def _vuln_reason(form):
-    """Every configuration change must state why. Returns (reason, error-dict)."""
+    """Optional change reason (the Settings UI no longer asks for one). Returns (reason, error-dict)."""
     reason = (form.get("reason") or "").strip()
-    if not reason:
-        return "", {"reason": "Өөрчлөлтийн шалтгааныг заавал бичнэ үү."}
     if len(reason) > VULN_REASON_MAX:
         return "", {"reason": f"Хамгийн ихдээ {VULN_REASON_MAX} тэмдэгт."}
     return reason, {}
@@ -7964,7 +8096,7 @@ def _vuln_config_log(conn, user, setting, label, old, new, reason):
         (user["id"], _vuln_user_label(user), setting, label, "" if old is None else str(old), "" if new is None else str(new),
          reason, now_utc().isoformat()))
     record_audit(conn, user["id"], "update", _VULN_SETTING_ENTITY, entity_id=setting,
-                 details=f"{label}: {old or '—'} ⇒ {new or '—'}. Шалтгаан: {reason}")
+                 details=f"{label}: {old or '—'} ⇒ {new or '—'}." + (f" Шалтгаан: {reason}" if reason else ""))
 
 
 def _vuln_settings_history(conn, limit=100):
@@ -8053,7 +8185,7 @@ def _vuln_role_text(conn, uid):
 
 
 def vuln_api_settings_save(conn, user, form):
-    """Save one settings section. Every change requires a reason and is written to vuln_config_audit."""
+    """Save one settings section. Every change is written to vuln_config_audit (who, when, old → new)."""
     if not vuln_can_edit_settings(user):
         return 403, {"error": "Тохиргоо өөрчлөх эрхгүй байна (зөвхөн админ — InfoSec)."}
     section = form.get("section", "")
@@ -8090,9 +8222,8 @@ def vuln_api_settings_save(conn, user, form):
     if section == "role":
         return 410, {"error": "Эрхийг Хэрэглэгчид хуудаснаас (Засах) удирдана."}
     if section == "forms":
-        if rerr:
-            return 422, {"error": "Өөрчлөлтийн шалтгааныг заавал бичнэ үү.", "fields": rerr}
-        return vuln_forms_save(conn, user, form, reason)
+        # Form Structure: no change reason is asked for; the before/after summary is still written to the audit log.
+        return vuln_forms_save(conn, user, form, "")
     if section == "perms":
         if rerr:
             return 422, {"error": "Талбаруудыг шалгана уу.", "fields": rerr}
@@ -8115,10 +8246,11 @@ def vuln_api_settings_save(conn, user, form):
         return 200, {"message": f"Хандах эрхийн тохиргоо хадгалагдлаа ({len(diffs)} өөрчлөлт).", "perms": new}
 
     if section == "substitute_add":
-        errors = dict(rerr)
+        # No separate change reason here: the «Тайлбар» (note) is recorded as the audit reason.
+        errors = {}
         role = (form.get("role") or "").strip()
         if role not in VULN_SUBSTITUTABLE_ROLES:
-            errors["role"] = "IT-ийн дарга эсвэл CTO-г сонгоно уу."
+            errors["role"] = "InfoSec, IT-ийн дарга эсвэл CTO-г сонгоно уу."
         def _uid(key):
             raw = (form.get(key) or "").strip()
             return conn.execute("SELECT * FROM users WHERE id = ? AND is_active = 1", (int(raw),)).fetchone() if raw.isdigit() else None
@@ -8131,6 +8263,9 @@ def vuln_api_settings_save(conn, user, form):
             errors["substitute_id"] = "Орлон гүйцэтгэгчийг сонгоно уу."
         elif principal and sub["id"] == principal["id"]:
             errors["substitute_id"] = "Өөр ажилтан сонгоно уу."
+        elif sub["id"] == user["id"]:
+            # An InfoSec delegate holds Settings rights; stop them extending their own delegation.
+            errors["substitute_id"] = "Өөрийгөө орлон гүйцэтгэгчээр томилох боломжгүй."
         start, end = (form.get("start_date") or "").strip(), (form.get("end_date") or "").strip()
         if not _valid_iso_date(start):
             errors["start_date"] = "Эхлэх огноо оруулна уу."
@@ -8151,12 +8286,11 @@ def vuln_api_settings_save(conn, user, form):
             """INSERT INTO vuln_substitutes(role, principal_id, substitute_id, start_date, end_date, note, created_by, created_at)
                VALUES (?,?,?,?,?,?,?,?)""", (role, principal["id"], sub["id"], start, end, note, user["id"], now_utc().isoformat()))
         _vuln_config_log(conn, user, f"substitute:{cur.lastrowid}", f"Орлон гүйцэтгэгч — {VULN_ROLE_LABELS[role]}", "",
-                         f"{_vuln_user_label(principal)} → {_vuln_user_label(sub)}, {start} – {end}" + (f" ({note})" if note else ""),
-                         reason)
+                         f"{_vuln_user_label(principal)} → {_vuln_user_label(sub)}, {start} – {end}", note)
         conn.commit()
         _vuln_notify([sub], "[Эмзэг байдал] Таныг орлон гүйцэтгэгчээр томиллоо", [
             f"{_vuln_user_label(user)} таныг {start} – {end} хугацаанд {_vuln_user_label(principal)}-ийн "
-            f"({VULN_ROLE_LABELS[role]}) оронд эмзэг байдлын бүртгэлийн батлах, томилох үүргийг гүйцэтгэхээр томиллоо.",
+            f"({VULN_ROLE_LABELS[role]}) оронд эмзэг байдлын бүртгэлийн тухайн үүргийг гүйцэтгэхээр томиллоо.",
         ] + ([f"Тайлбар: {note}"] if note else []), 0)
         return 200, {"message": "Орлон гүйцэтгэгч томилогдлоо."}
 
@@ -8322,6 +8456,7 @@ def _vulnreg_sidebar(conn, user, active):
         section("Тохиргоо", [
             item("settings", "/registry/vulnerabilities/settings", "cog", "Тохиргоо") if vuln_can_view_settings(user) else "",
         ]),
+        section("Тусламж", [item("guide", "/guide#vulnreg", "file", "Гарын авлага")]),
     ])
 
 
@@ -8341,7 +8476,7 @@ def _vulnreg_page(conn, user, template, active, boot):
     page = page.replace("{{SIDEBAR}}", _vulnreg_sidebar(conn, user, active))
     boot = dict(boot, csrf=_csrf_token(), userId=user["id"], role=role,
                 canManage=vuln_can_manage(user), canDelete=vuln_can_delete(user), canExport=vuln_perm(user, "export"),
-                isItHead=vuln_can_assign(user), isCto=vuln_is_cto(user), isAdmin=vuln_is_admin(user),
+                isItHead=vuln_can_assign(user) or vuln_is_any_reviewer(user), isCto=vuln_is_cto(user), isAdmin=vuln_is_admin(user),
                 vulnRoles=sorted(user["_vroles"]), sla=vuln_sla(conn), todoCount=vuln_todo_count(conn, user),
                 forms=vuln_forms_all(conn))
     return page.replace("{{BOOT_JSON}}", _script_json(boot))
@@ -9301,6 +9436,11 @@ def app(environ, start_response):
         conn.commit()
         conn.close()
         return redirect(start_response, "/login", headers=[session_cookie_header("expired", 0)])
+
+    if path == "/guide":
+        page = guide_page(conn, user)
+        conn.close()
+        return response(start_response, "200 OK", page)
 
     if path == "/dashboard":
         page = dashboard_page(conn, user, qs_value(query, "notice"))
