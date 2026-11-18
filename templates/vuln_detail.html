@@ -217,7 +217,7 @@
     { keys: ["avoid_confirm"], label: "Систем зогсоосныг баталгаажуулах", icon: "check", fn: openAvoidConfirm },
     { keys: ["avoid_close"], label: "Хянаж хаах", icon: "check", fn: openAvoidClose },
     { keys: ["temp_resume"], label: "Засвар руу шилжүүлэх", icon: "wrench", fn: function () { simple("temp_resume", "Засвар руу шилжүүлэх", "Patch гарсан эсвэл түр хамгаалалт хангалтгүй болсон тул засварын шатанд буцаана.", true); } },
-    { keys: ["resubmit"], label: "Засаад дахин илгээх", icon: "flow", fn: function () { var to = rec.reviewer ? "хариуцагчид (" + rec.reviewer.name + ")" : "IT-ийн даргад"; simple("resubmit", "Дахин илгээх", "Засварласан бүртгэлийг " + to + " дахин хянуулна.", false); } },
+    { keys: ["resubmit"], label: "Засаад дахин илгээх", icon: "flow", fn: function () { var to = rec.reviewer ? "хүлээн авагчид (" + rec.reviewer.name + ")" : "хүлээн авагчид"; simple("resubmit", "Дахин илгээх", "Засварласан бүртгэлийг " + to + " дахин хянуулна.", false); } },
     { keys: ["return"], label: "Буцаах", icon: "back", fn: function () { simple("return", "InfoSec-д буцаах", "Мэдээлэл дутуу бол юуг засах шаардлагатайг бичнэ үү.", true); } }
   ];
 
@@ -297,7 +297,7 @@
         '<br><a href="' + esc(rec.sourceUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(rec.sourceUrl) + "</a>" : "")) +
       kv("Нийтэлсэн / мэдээлсэн огноо", '<span class="mono">' + esc(rec.published || "—") + " / " + esc(rec.reported || "—") + "</span>") +
       kv("Бүртгэсэн", val(rec.createdBy) + ' <span class="muted mono">' + esc(VR.fmtDateTime(rec.createdAt)) + "</span>") +
-      (rec.reviewer ? kv("Хариуцагч (инженер томилох)", esc(rec.reviewer.name)) : "") +
+      (rec.reviewer ? kv("Эмзэг байдлын бүртгэл хүлээн авагч", esc(rec.reviewer.name)) : "") +
       kv("Хариуцах инженер", rec.assignee ? esc(rec.assignee.name) : nil("Томилоогүй")) +
       textKv(L("register", "description", "Тайлбар"), rec.description) +
       textKv(L("register", "recommendation", "Засварлах зөвлөмж"), rec.recommendation) +
@@ -410,7 +410,7 @@
   function whoIsNext() {
     var s = rec.status, mine = groups().length > 0;
     var who = {
-      "new": rec.reviewer ? "Хариуцагч (" + rec.reviewer.name + ") хянаж, инженер томилно." : "IT-ийн дарга хянаж, инженер томилно.", returned: "InfoSec мэдээллийг засаж дахин илгээнэ.",
+      "new": rec.reviewer ? "Хүлээн авагч (" + rec.reviewer.name + ") хянаж, инженер томилно." : "Хүлээн авагч хянаж, инженер томилно.", returned: "InfoSec мэдээллийг засаж дахин илгээнэ.",
       assigned: "Томилогдсон инженер мэдээллийг бөглөж илгээнэ.", under_assessment: "Инженер хөрөнгө ба хариуцлагын мэдээлэл, үнэлгээг бөглөж илгээнэ.",
       risk_assessment: rec.impactDecision.affected === "yes" ? "InfoSec MAS-14-ийн дагуу эрсдэлийг үнэлж шийдвэр гаргана."
         : "InfoSec хөрөнгөд нөлөөлсөн эсэхийг тодорхойлж, эрсдэлийг үнэлнэ.", pending_cto: "CTO эрсдэл хүлээн зөвшөөрөх эсэхийг шийднэ.",
@@ -881,7 +881,7 @@
       d.action = "risk_assess"; return d;
     }, function (d) {
       if (d.as_affected === "no")
-        return VR.confirm({ title: "Нөлөөлөөгүй гэж хаах уу?", body: rec.ref + " бүртгэлийг «" + VR.STATUS.not_affected + "» төлөвтэй хаана. IT-ийн дарга, CTO-д мэдэгдэл очно.", confirmLabel: "Хаах" });
+        return VR.confirm({ title: "Нөлөөлөөгүй гэж хаах уу?", body: rec.ref + " бүртгэлийг «" + VR.STATUS.not_affected + "» төлөвтэй хаана. Хүлээн авагч, CTO-д мэдэгдэл очно.", confirmLabel: "Хаах" });
       if (!d.ra_decision) return Promise.resolve(true);
       return VR.confirm({ title: "Шийдвэр батлах уу?", body: DECISION[d.ra_decision] + " — " + rec.ref, confirmLabel: "Батлах" });
     });
@@ -997,7 +997,7 @@
       if (!requireFields(f, d, req)) return null;
       d.action = o; return d;
     }, function (d) {
-      if (d.action === "close") return VR.confirm({ title: "Бүртгэлийг хаах уу?", body: rec.ref + " хаагдаж, IT-ийн дарга, CTO-д мэдэгдэл очно.", confirmLabel: "Хаах" });
+      if (d.action === "close") return VR.confirm({ title: "Бүртгэлийг хаах уу?", body: rec.ref + " хаагдаж, Хүлээн авагч, CTO-д мэдэгдэл очно.", confirmLabel: "Хаах" });
       return Promise.resolve(true);
     });
     VR.showModal(dlg, form.querySelector('[name="outcome"]'));

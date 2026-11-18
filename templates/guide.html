@@ -275,7 +275,7 @@
         <li><span class="ui">Хэрэглэгчид</span> → <span class="ui primary">+ Хэрэглэгч нэмэх</span>.</li>
         <li><span class="ui">Azure и-мэйл хаяг</span>, <span class="ui">Дэлгэцийн нэр</span>, <span class="ui">Үндсэн хэлтэс</span>-ийг бөглөнө.</li>
         <li><b>Системийн эрх</b>-ээс нэгийг сонгоно: Хэрэглэгч / Админ / Супер Админ.</li>
-        <li>Шаардлагатай бол <b>Эмзэг байдлын бүртгэл</b>-ийн үүргийг (InfoSec, IT-ийн дарга, Инженер, CTO) нэг буюу хэдийг сонгоно.</li>
+        <li>Шаардлагатай бол <b>Эмзэг байдлын бүртгэл</b>-ийн үүргийг (InfoSec, Хүлээн авагч, Инженер, CTO) нэг буюу хэдийг сонгоно.</li>
         <li><span class="ui primary">Үүсгэх</span> дарна. Хэрэглэгчид урилгын и-мэйл автоматаар илгээгдэнэ.</li>
       </ol>
       <h3>Хэрэглэгч засах</h3>
@@ -300,8 +300,8 @@
       </ol>
     </section>
     <!-- 11. VulnReg -->
-    <section class="panel guide-section" id="vulnreg" data-roles="vuln_access infosec it_head engineer cto">
-      <h2 data-short="Эмзэг байдлын бүртгэл"><span class="guide-num"></span>Эмзэг байдлын бүртгэл (VulnReg) <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span><span class="guide-role" data-r="it_head">IT-ийн дарга</span><span class="guide-role" data-r="engineer">Инженер</span><span class="guide-role" data-r="cto">CTO</span></span></h2>
+    <section class="panel guide-section" id="vulnreg" data-roles="vuln_access infosec receiver engineer cto">
+      <h2 data-short="Эмзэг байдлын бүртгэл"><span class="guide-num"></span>Эмзэг байдлын бүртгэл (VulnReg) <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span><span class="guide-role" data-r="receiver">Хүлээн авагч</span><span class="guide-role" data-r="engineer">Инженер</span><span class="guide-role" data-r="cto">CTO</span></span></h2>
       <p>Програм хангамж, системийн эмзэг байдлыг (CVE гэх мэт) бүртгэж, хариуцагч томилох, үнэлэх, засварлах, баталгаажуулж хаах хүртэлх бүх явцыг хянана. Нээх: <span class="ui">Бүртгэл ▾</span> → <span class="ui">Эмзэг байдлын бүртгэл</span>. Энэ хэсэг өөрийн зүүн цэстэй; үндсэн систем рүү <span class="ui">МАБ Платформ руу буцах</span> товчоор буцна.</p>
 
       <h3>Үүрэг ба хариуцлага</h3>
@@ -309,7 +309,7 @@
         <thead><tr><th>Үүрэг</th><th>Юу хийх вэ</th></tr></thead>
         <tbody>
           <tr><td><span class="guide-role" data-r="infosec">InfoSec</span></td><td>Эмзэг байдал бүртгэнэ; эрсдэлийн үнэлгээ хийж шийдвэр гаргана; засварыг баталгаажуулж хаана; Тохиргоог удирдана.</td></tr>
-          <tr><td><span class="guide-role" data-r="it_head">IT-ийн дарга</span></td><td>Шинэ бүртгэлийг хянаж инженер томилно, эсвэл InfoSec-д буцаана.</td></tr>
+          <tr><td><span class="guide-role" data-r="receiver">Хүлээн авагч</span></td><td>Шинэ бүртгэлийг хянаж инженер томилно, эсвэл InfoSec-д буцаана.</td></tr>
           <tr><td><span class="guide-role" data-r="engineer">Инженер</span></td><td>Хөрөнгө, нөлөөллийг үнэлнэ; засвар эсвэл түр хамгаалалт хийнэ.</td></tr>
           <tr><td><span class="guide-role" data-r="cto">CTO</span></td><td>Эрсдэлийг хүлээн зөвшөөрөх хүсэлтийг батална эсвэл татгалзана.</td></tr>
         </tbody>
@@ -319,7 +319,7 @@
       <h3>Ажлын урсгал</h3>
       <div class="flow" role="img" aria-label="Эмзэг байдлын ажлын урсгал">
         <div class="flow-step"><b>1. Бүртгэл</b>InfoSec<em>Шинэ</em></div><div class="flow-arrow">→</div>
-        <div class="flow-step"><b>2. Томилгоо</b>IT-ийн дарга<em>Хариуцагч томилсон</em></div><div class="flow-arrow">→</div>
+        <div class="flow-step"><b>2. Томилгоо</b>Хүлээн авагч<em>Хариуцагч томилсон</em></div><div class="flow-arrow">→</div>
         <div class="flow-step"><b>3. Үнэлгээ</b>Инженер<em>Үнэлгээ хийгдэж буй</em></div><div class="flow-arrow">→</div>
         <div class="flow-step"><b>4. Эрсдэл</b>InfoSec<em>Эрсдэлийн үнэлгээ</em></div><div class="flow-arrow">→</div>
         <div class="flow-step"><b>5. Засвар</b>Инженер<em>Засвар хийгдэж буй</em></div><div class="flow-arrow">→</div>
@@ -355,17 +355,17 @@
       <ol class="guide-steps">
         <li>Жагсаалтын дээрх <span class="ui primary">Эмзэг байдал бүртгэх</span> товчийг дарна.</li>
         <li><b>Ерөнхий мэдээлэл</b> (нэр, CVE, эх сурвалж, холбоос, огноо, тайлбар), <b>Эрсдэлийн үнэлгээ</b> (CVSS оноо, нөлөөлөл, үндэслэл), <b>Засварлах зөвлөмж</b>-ийг бөглөнө. Од (*) тэмдэгтэй талбар заавал.</li>
-        <li><span class="ui primary">Бүртгэх</span> дарна. <span class="ui">Хариуцагч сонгох</span> цонх нээгдэнэ — бүртгэлийг хянаж <b>инженер томилох хариуцагчийг</b> нэрээр хайж сонгоод <span class="ui primary">Бүртгэх</span> дарна.</li>
-        <li>Бүртгэл <span class="mock-pill blue">Шинэ</span> төлөвтэй үүсч, IT-ийн даргын оронд сонгосон хариуцагчид и-мэйл очно. Дугаар нь <b>VUL-ОН-NNNN</b> хэлбэртэй.</li>
+        <li><span class="ui primary">Бүртгэх</span> дарна. <span class="ui">Хүлээн авагч сонгох</span> цонх нээгдэнэ — бүртгэлийг хянаж инженер томилох <b>эмзэг байдлын бүртгэл хүлээн авагчийг</b> («Хүлээн авагч» эрхтэй хэрэглэгчдээс) нэрээр хайж сонгоод <span class="ui primary">Бүртгэх</span> дарна.</li>
+        <li>Бүртгэл <span class="mock-pill blue">Шинэ</span> төлөвтэй үүсч, сонгосон хүлээн авагчид и-мэйл очно. Дугаар нь <b>VUL-ОН-NNNN</b> хэлбэртэй.</li>
       </ol>
       <p>Хөрөнгийг энд оруулахгүй — инженер 3-р алхамд бөглөнө. Бүртгэлээ засах бол дэлгэрэнгүй хуудасны <span class="ui">⋯</span> → <span class="ui">Бүртгэл засах</span>.</p>
 
-      <h3>2. Инженер томилох <span class="guide-roles"><span class="guide-role" data-r="it_head">Хариуцагч (IT-ийн даргын оронд)</span></span></h3>
+      <h3>2. Инженер томилох <span class="guide-roles"><span class="guide-role" data-r="receiver">Хүлээн авагч</span></span></h3>
       <ol class="guide-steps">
         <li><span class="ui">Миний хийх ажил</span> табаас танд хянуулахаар ирсэн <span class="mock-pill blue">Шинэ</span> бүртгэлийг нээнэ.</li>
         <li><span class="ui primary">Инженер томилох</span> → <span class="ui">Хариуцах инженер</span>-ийг сонгоод <span class="ui primary">Томилох</span>. Инженерт и-мэйл очно. Шаардлагатай бол дараа нь <span class="ui">Инженер солих</span>-оор сольж болно.</li>
         <li>Мэдээлэл дутуу бол <span class="ui">Буцаах</span> дарж тайлбар бичнэ — бүртгэл бүртгэсэн InfoSec-д <span class="mock-pill amber">Буцаасан</span> төлөвтэй очих ба тэр засаад <span class="ui">Засаад дахин илгээх</span> дарна.</li>
-        <li>Бүртгэх үед сонгосон хариуцагч тухайн бүртгэлд IT-ийн даргын үүргийг гүйцэтгэнэ. (Хариуцагч сонгоогүй, өмнө бүртгэгдсэн бүртгэлийг IT-ийн дарга өмнөх журмаар томилно.)</li>
+        <li>Бүртгэх үед сонгосон хүлээн авагч тухайн бүртгэлийг хянаж, инженер томилно. (Хүлээн авагч сонгоогүй, өмнө бүртгэгдсэн бүртгэлийг «Хүлээн авагч» үүрэгтэй хэрэглэгч томилно.)</li>
       </ol>
 
       <h3>3. Хөрөнгө ба нөлөөллийн үнэлгээ <span class="guide-roles"><span class="guide-role" data-r="engineer">Инженер</span></span></h3>
@@ -375,7 +375,7 @@
         <li><b>Үнэлгээ:</b> хамрах хүрээ, одоогийн хувилбар, интернэтэд нээлттэй эсэх, patch гарсан эсэх, шалгасан арга, <b>нотолгоо</b> (зураг, Excel, Word, PDF, TXT), дүгнэлт.</li>
         <li>Дуусаагүй бол <span class="ui">Ноорог хадгалах</span>; бэлэн болмогц <span class="ui primary">Илгээх</span> — бүртгэл InfoSec-ийн эрсдэлийн үнэлгээнд шилжинэ.</li>
       </ol>
-      <div class="guide-warn">«Ашиглагдсан шинж тэмдэг илэрсэн үү?» гэдэгт <b>Тийм</b> гэж хариулбал InfoSec болон IT-ийн даргад <b>яаралтай</b> и-мэйл очно. Энэ тохиолдолд <a href="#incidents">Зөрчлийн бүртгэл</a>-д зөрчил бүртгэх шаардлагатай.</div>
+      <div class="guide-warn">«Ашиглагдсан шинж тэмдэг илэрсэн үү?» гэдэгт <b>Тийм</b> гэж хариулбал InfoSec болон хүлээн авагчид <b>яаралтай</b> и-мэйл очно. Энэ тохиолдолд <a href="#incidents">Зөрчлийн бүртгэл</a>-д зөрчил бүртгэх шаардлагатай.</div>
 
       <h3>4. Эрсдэлийн үнэлгээ ба шийдвэр <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span></span></h3>
       <ol class="guide-steps">
@@ -408,7 +408,7 @@
       <h3>7. Баталгаажуулж хаах <span class="guide-roles"><span class="guide-role" data-r="infosec">InfoSec</span></span></h3>
       <ol class="guide-steps">
         <li><span class="ui primary">Баталгаажуулах</span> дарна.</li>
-        <li><b>Засагдсан — баталгаажуулж хаах</b>: баталгаажуулалтын тэмдэглэл, хаалтын тайлбар, үлдэгдэл эрсдэл, эрсдэлийн төлөвийг бөглөнө. Бүртгэл <span class="mock-pill green">Хаагдсан</span> болж IT-ийн дарга, CTO-д мэдэгдэнэ.</li>
+        <li><b>Засагдсан — баталгаажуулж хаах</b>: баталгаажуулалтын тэмдэглэл, хаалтын тайлбар, үлдэгдэл эрсдэл, эрсдэлийн төлөвийг бөглөнө. Бүртгэл <span class="mock-pill green">Хаагдсан</span> болж хүлээн авагч, CTO-д мэдэгдэнэ.</li>
         <li>Эсвэл <b>Түр хамгаалалт хэрэгжсэн</b> / <b>Засагдаагүй — засвар руу буцаах</b>.</li>
       </ol>
       <p>Засвар хийсэн инженер өөрийн ажлыг баталгаажуулах боломжгүй («ажлын хуваарилалт»). «Зайлсхийх» бүртгэлийг инженер баталгаажуулсны дараа InfoSec <span class="ui primary">Хянаж хаах</span> дарна.</p>
@@ -443,7 +443,7 @@
       </ul>
 
       <h3>Орлон гүйцэтгэгч</h3>
-      <p>InfoSec, IT-ийн дарга эсвэл CTO чөлөө авсан үед InfoSec тухайн үүргийг өөр ажилтанд <b>хугацаатайгаар</b> шилжүүлж болно. Хугацааны турш орлон гүйцэтгэгч тухайн үүргийн бүх эрх, үйлдэл, и-мэйл мэдэгдлийг авах ба өмнө үүссэн бүртгэлүүдийг ч харна. Хугацаа дуусахад эрх автоматаар цуцлагдана.</p>
+      <p>InfoSec, Хүлээн авагч эсвэл CTO чөлөө авсан үед InfoSec тухайн үүргийг өөр ажилтанд <b>хугацаатайгаар</b> шилжүүлж болно. Хугацааны турш орлон гүйцэтгэгч тухайн үүргийн бүх эрх, үйлдэл, и-мэйл мэдэгдлийг авах ба өмнө үүссэн бүртгэлүүдийг ч харна. Хугацаа дуусахад эрх автоматаар цуцлагдана.</p>
     </section>
 
     <!-- 12. VulnReg settings -->
@@ -465,12 +465,12 @@
     </section>
 
     <!-- 13. Incidents -->
-    <section class="panel guide-section" id="incidents" data-roles="incident_view superadmin infosec it_head cto">
-      <h2 data-short="Зөрчлийн бүртгэл"><span class="guide-num"></span>Зөрчлийн бүртгэл <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span><span class="guide-role" data-r="infosec">InfoSec</span><span class="guide-role" data-r="it_head">IT-ийн дарга</span><span class="guide-role" data-r="cto">CTO</span></span></h2>
+    <section class="panel guide-section" id="incidents" data-roles="incident_view superadmin infosec receiver cto">
+      <h2 data-short="Зөрчлийн бүртгэл"><span class="guide-num"></span>Зөрчлийн бүртгэл <span class="guide-roles"><span class="guide-role" data-r="superadmin">Супер админ</span><span class="guide-role" data-r="infosec">InfoSec</span><span class="guide-role" data-r="receiver">Хүлээн авагч</span><span class="guide-role" data-r="cto">CTO</span></span></h2>
       <p>Мэдээллийн аюулгүй байдлын зөрчлийг бүртгэж, хариу арга хэмжээг хугацаанд нь авч буйг хянана. Нээх: <span class="ui">Бүртгэл ▾</span> → <span class="ui">Зөрчлийн бүртгэл</span>.</p>
       <ul>
         <li><b>Бүртгэх, засах, хариу өгөх, устгах:</b> Супер админ, InfoSec.</li>
-        <li><b>Зөвхөн харах:</b> IT-ийн дарга, CTO.</li>
+        <li><b>Зөвхөн харах:</b> Хүлээн авагч, CTO.</li>
       </ul>
 
       <figure class="guide-figure">

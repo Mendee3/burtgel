@@ -2,7 +2,7 @@
 
 - System Superadmin: full access.
 - InfoSec: full access (create, edit, delete, corrective actions, severity changes).
-- IT Head, CTO: read-only.
+- Recipient (Хүлээн авагч), CTO: read-only.
 - Everyone else (incl. system Admins without one of these roles, and Engineers): no access.
 
 Roles held as an active substitute (vuln_substitutes, same rule as VulnReg) count too.
@@ -17,7 +17,7 @@ from burtgel_api.auth.sessions import now_utc
 from burtgel_api.db.models import User
 
 INCIDENT_MANAGE_ROLES = {"infosec"}
-INCIDENT_VIEW_ROLES = {"infosec", "it_head", "cto"}
+INCIDENT_VIEW_ROLES = {"infosec", "receiver", "cto"}
 
 
 def effective_vuln_roles(db: DbSession, user: User) -> set[str]:

@@ -509,8 +509,8 @@
     }).join("");
   }
 
-  /* «Хариуцагч сонгох» window shown when a new registration is submitted: picks the person who reviews the record
-     and assigns the engineer (acts as the IT Head for it).
+  /* «Хүлээн авагч сонгох» window shown when a new registration is submitted: picks the person who reviews the record
+     and assigns the engineer (acts as the Recipient for it).
      Resolves to the chosen user id, or "" if cancelled. */
   VR.pickResponsible = function (people, title) {
     return new Promise(function (resolve) {
@@ -518,15 +518,15 @@
       dlg.className = "modal narrow";
       dlg.setAttribute("aria-labelledby", "rp-title");
       dlg.innerHTML =
-        '<form novalidate><div class="m-head"><div><h2 id="rp-title">Хариуцагч сонгох</h2>' +
+        '<form novalidate><div class="m-head"><div><h2 id="rp-title">Хүлээн авагч сонгох</h2>' +
         (title ? "<p>" + esc(title) + "</p>" : "") + "</div>" +
         '<button type="button" class="icon-btn" data-close aria-label="Хаах"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>' +
         '<div class="m-body">' +
-        (people.length ? "" : '<div class="m-alert">Идэвхтэй хэрэглэгч олдсонгүй.</div>') +
-        '<div class="field"><label for="rp-user">Хариуцагч (инженер томилох)<span class="req">*</span></label>' +
+        (people.length ? "" : '<div class="m-alert">«Хүлээн авагч» эрхтэй идэвхтэй хэрэглэгч алга. Хэрэглэгчид хуудаснаас эрх олгоно уу.</div>') +
+        '<div class="field"><label for="rp-user">Эмзэг байдлын бүртгэл хүлээн авагч<span class="req">*</span></label>' +
         '<div class="combo"><input id="rp-user" type="text" placeholder="Ажилтны нэрээр хайх…"><input type="hidden" name="rp_assignee"></div>' +
         '<span class="err-msg" data-err="rp_assignee"></span></div>' +
-        '<p class="hint" style="margin:0">Бүртгэл IT-ийн даргын оронд сонгосон хүнд очно. Тэр хянаж, мэдээлэл дутуу бол буцааж, ' +
+        '<p class="hint" style="margin:0">Бүртгэл сонгосон хүлээн авагчид очно. Тэр хянаж, мэдээлэл дутуу бол буцааж, ' +
         "засварлах инженерийг томилно. Сонгосон хүнд и-мэйлээр мэдэгдэл очно.</p></div>" +
         '<div class="m-foot"><button type="button" class="btn-secondary" data-close>Буцах</button>' +
         '<button type="submit" class="btn-primary">Бүртгэх</button></div></form>';
@@ -660,8 +660,8 @@
           });
         }
         if (editing) { send(); return; }
-        // New registration: the registrant chooses the responsible person, who acts as the IT Head for this record
-        // (reviews it and assigns the engineer) — instead of the record going to the IT Head automatically.
+        // New registration: the registrant chooses the responsible person, who acts as the Recipient for this record
+        // (reviews it and assigns the engineer) — instead of the record going to the Recipient role automatically.
         VR.pickResponsible(O.people || [], data.title || "").then(function (id) {
           if (!id) return;
           data.reviewer_id = id;
