@@ -5712,6 +5712,8 @@ VULN_STATUS_ORDER = list(VULN_STATUS_LABELS)
 VULN_CLOSED_STATUSES = ("closed", "not_affected", "transferred", "accepted")
 # Statuses in which the Recipient may (re)assign the responsible engineer.
 VULN_ASSIGNABLE_STATUSES = ("new", "assigned", "under_assessment", "remediation", "avoidance", "temp_mitigation")
+# Statuses in which the assigned engineer may hand the record back to the Recipient or pass it to another engineer.
+VULN_HANDOVER_STATUSES = tuple(s for s in VULN_ASSIGNABLE_STATUSES if s != "new")
 
 # Workflow actions: key -> (from statuses, actor, label). Actor: infosec | receiver | cto | assignee.
 # Superadmin may act in every role. Everything is re-checked on the server in vuln_available_actions().
@@ -5734,6 +5736,9 @@ VULN_ACTIONS = {
     "verify_temp": (("verification",), "infosec", "Түр хамгаалалт гэж батлах"),
     "close": (("verification",), "infosec", "Баталгаажуулж хаах"),
     "temp_resume": (("temp_mitigation",), "assignee", "Засвар руу шилжүүлэх"),
+    # The assigned engineer hands the record back to the Recipient, or passes it straight to another engineer.
+    "hand_back": (VULN_HANDOVER_STATUSES, "assignee", "Хүлээн авагчид буцаах"),
+    "reassign": (VULN_HANDOVER_STATUSES, "assignee", "Өөр инженерт шилжүүлэх"),
 }
 
 # ── VulnReg roles, access permissions, substitutes ──────────────────────────
@@ -5996,7 +6001,8 @@ def vuln_can_manage(user):
 
 
 def vuln_can_delete(user):
-    return is_superadmin(user)
+    """Deleting a record (soft delete): InfoSec role only (incl. an active InfoSec substitute) — no Superadmin pass."""
+    return "infosec" in _vroles(user)
 
 
 def vuln_is_receiver(user):
@@ -6587,9 +6593,21 @@ def vuln_api_options(conn, user):
             """SELECT u.id, u.display_name, u.username, u.email, u.vuln_role, d.name AS dept FROM users u
                LEFT JOIN departments d ON d.id = u.department_id WHERE u.is_active = 1 AND u.vuln_role <> ''
                ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username)""")]
+    if users:
+        engineers = [u for u in users if "engineer" in u["roles"]]
+    elif vuln_has_role(user, "engineer"):
+        # «Өөр инженерт шилжүүлэх» picker: an engineer sees only the other engineers, not the full user list.
+        engineers = [{"id": r["id"], "name": _vuln_user_label(r), "dept": r["dept"] or "", "roles": ["engineer"]}
+                     for r in conn.execute(
+            """SELECT u.id, u.display_name, u.username, u.email, d.name AS dept FROM users u
+               LEFT JOIN departments d ON d.id = u.department_id WHERE u.is_active = 1 AND """
+            + _VULN_HAS_ROLE_SQL.format(col="u.vuln_role") + """
+               ORDER BY COALESCE(NULLIF(u.display_name, ''), u.username)""", ("engineer",))]
+    else:
+        engineers = []
     return {
         "departments": departments, "assets": assets, "users": users,
-        "engineers": [u for u in users if "engineer" in u["roles"]],
+        "engineers": engineers,
         # «Хүлээн авагч сонгох» at registration: only active users holding the «Хүлээн авагч» (receiver) role.
         "people": [{"id": r["id"], "name": _vuln_user_label(r), "dept": r["dept"] or ""} for r in conn.execute(
             """SELECT u.id, u.display_name, u.username, u.email, d.name AS dept FROM users u
@@ -6686,6 +6704,8 @@ def vuln_available_actions(user, row):
             ok = vuln_has_role(user, actor)
         if key == "resubmit" and not vuln_can_edit_record(user, row):
             ok = False  # "Засаад дахин илгээх" belongs with editing: only the InfoSec user who created the record
+        if key in ("hand_back", "reassign") and not (row["assignee_id"] and (_vuln_is_assignee(user, row) or is_superadmin(user))):
+            ok = False  # only the engineer currently assigned (InfoSec draft-keeping rights do not extend to this)
         if key == "avoid_close" and not row["avoid_confirmed_at"]:
             ok = False
         if key == "verify_temp" and row["rm_fix_type"] != "temp":
@@ -6709,6 +6729,7 @@ _VULN_ACTION_EVENTS = {
     "cto_reject": "cto_rejected", "avoid_confirm": "avoid_confirmed", "submit_fix": "fix_submitted",
     "submit_temp": "temp_submitted", "cannot_remediate": "cannot_remediate", "verify_fail": "verify_failed",
     "verify_temp": "verify_temp", "close": "closed", "avoid_close": "closed",
+    "hand_back": "handed_back", "reassign": "reassigned",
 }
 
 
@@ -6872,6 +6893,56 @@ def vuln_api_action(conn, user, row, form):
             f"{_vuln_user_label(user)} таны бүртгэсэн эмзэг байдлыг мэдээлэл дутуу гэж буцаалаа.", ""]
             + _vuln_record_lines(row) + ["", "Тайлбар:", note], row["id"]))
         msg = "Бүртгэлийг InfoSec-д буцаалаа."
+
+    elif action == "hand_back":
+        if not note:
+            return _vuln_fail({"note": "Буцааж буй шалтгаанаа бичнэ үү."})
+        # Before any assessment is submitted the record goes back to the Recipient's «new» queue; in later stages the
+        # status stays and the Recipient appoints a new engineer. Drafts already entered are kept.
+        cols = {"assignee_id": None}
+        if status in ("assigned", "under_assessment"):
+            cols["status"] = "new"
+        _vuln_apply(conn, user, row, cols, note, event, audit_label=label)
+        prev = row["assignee_name"] or _vuln_user_label(user)
+        lines = [f"{prev} инженер дараах эмзэг байдлын бүртгэлийг танд буцаалаа. Өөр инженер томилно уу.", ""] \
+            + _vuln_record_lines(row) + ["", "Шалтгаан:", note]
+        if row["reviewer_id"]:
+            reviewer = _vuln_user_by_id(conn, row["reviewer_id"])
+            after.append(lambda: _vuln_notify(_vuln_reviewer_and_subs(conn, reviewer),
+                                              f"[Эмзэг байдал] {_vuln_ref(row)} инженер буцаалаа", lines, row["id"]))
+        else:
+            after.append(lambda: _vuln_notify(_vuln_receivers(conn), f"[Эмзэг байдал] {_vuln_ref(row)} инженер буцаалаа",
+                                              lines, row["id"]))
+        msg = "Бүртгэлийг хүлээн авагчид буцаалаа."
+
+    elif action == "reassign":
+        raw = _vf(form, "assignee_id", 20)
+        engineer = conn.execute("SELECT * FROM users WHERE id = ? AND is_active = 1 AND "
+                                + _VULN_HAS_ROLE_SQL.format(col="vuln_role"), (int(raw), "engineer")).fetchone() if raw.isdigit() else None
+        errors = {}
+        if not engineer:
+            errors["assignee_id"] = "Инженер эрхтэй идэвхтэй ажилтныг сонгоно уу."
+        elif engineer["id"] == row["assignee_id"]:
+            errors["assignee_id"] = "Өөр инженерийг сонгоно уу."
+        if not note:
+            errors["note"] = "Шилжүүлж буй шалтгаанаа бичнэ үү."
+        if errors:
+            return _vuln_fail(errors)
+        _vuln_apply(conn, user, row, {"assignee_id": engineer["id"]}, note, event, audit_label=label)
+        name = _vuln_user_label(engineer)
+        prev = row["assignee_name"] or _vuln_user_label(user)
+        eng_lines = [f"{prev} дараах эмзэг байдлын бүртгэлийг танд шилжүүллээ.", "",
+                     f"{_vuln_ref(row)} — {row['title']}",
+                     f"Түвшин: {VULN_SEV_LABELS.get((row['severity'] or '').lower(), row['severity'])}",
+                     f"Мэдээллийн хөрөнгө / Систем: {row['asset_name'] or '—'}",
+                     f"Төлөв: {VULN_STATUS_LABELS.get(status, status)}",
+                     f"Засварлах хугацаа: {row['due_date'] or '—'}", "", "Тайлбар:", note]
+        after.append(lambda: _vuln_notify([engineer], f"[Эмзэг байдал] {_vuln_ref(row)} танд шилжүүлэгдлээ", eng_lines, row["id"]))
+        rcv_lines = [f"{prev} инженер дараах бүртгэлийг {name}-д шилжүүллээ.", ""] + _vuln_record_lines(row) + ["", "Тайлбар:", note]
+        rcv = (_vuln_reviewer_and_subs(conn, _vuln_user_by_id(conn, row["reviewer_id"])) if row["reviewer_id"]
+               else list(_vuln_receivers(conn)))
+        after.append(lambda: _vuln_notify(rcv, f"[Эмзэг байдал] {_vuln_ref(row)} өөр инженерт шилжлээ", rcv_lines, row["id"]))
+        msg = f"Бүртгэлийг {name}-д шилжүүлж, мэдэгдэл илгээлээ."
 
     elif action == "resubmit":
         _vuln_apply(conn, user, row, {"status": "new"}, note, audit_label=label)
@@ -7410,15 +7481,22 @@ def vuln_api_create(conn, user, form):
                  "message": f"Эмзэг байдал бүртгэгдэж{n}, хариуцагч {name}-д мэдэгдэл илгээлээ."}
 
 
-def _vuln_notify_reviewer(conn, actor, reviewer, ids, resubmitted=False):
-    """Mail the responsible person (and anyone substituting for them today) that records await review."""
-    rows = [conn.execute(f"{_VULN_SELECT_SQL} WHERE v.id = ?", (i,)).fetchone() for i in ids]
-    row = rows[0]
+def _vuln_reviewer_and_subs(conn, reviewer):
+    """The record's responsible person plus anyone substituting for them today."""
+    if not reviewer:
+        return list(_vuln_receivers(conn))
     today = _vuln_today()
     subs = conn.execute(
         """SELECT u.* FROM vuln_substitutes s JOIN users u ON u.id = s.substitute_id
            WHERE s.principal_id = ? AND s.revoked_at = '' AND u.is_active = 1
            AND s.start_date <= ? AND s.end_date >= ?""", (reviewer["id"], today, today)).fetchall()
+    return [reviewer] + list(subs)
+
+
+def _vuln_notify_reviewer(conn, actor, reviewer, ids, resubmitted=False):
+    """Mail the responsible person (and anyone substituting for them today) that records await review."""
+    rows = [conn.execute(f"{_VULN_SELECT_SQL} WHERE v.id = ?", (i,)).fetchone() for i in ids]
+    row = rows[0]
     what = "засварлаж дахин илгээлээ" if resubmitted else "бүртгэж, таныг хариуцагчаар сонголоо"
     lines = [
         f"{_vuln_user_label(actor)} эмзэг байдал {what}.",
@@ -7430,7 +7508,7 @@ def _vuln_notify_reviewer(conn, actor, reviewer, ids, resubmitted=False):
         "",
         "Нөлөөлөх хөрөнгө:",
     ] + [f"  • {_vuln_ref(r)} — {r['asset_name'] or '—'}" for r in rows]
-    _vuln_notify([reviewer] + list(subs), f"[Эмзэг байдал] {_vuln_ref(row)} хянах хүсэлт", lines, row["id"])
+    _vuln_notify(_vuln_reviewer_and_subs(conn, reviewer), f"[Эмзэг байдал] {_vuln_ref(row)} хянах хүсэлт", lines, row["id"])
 
 
 def vuln_api_update(conn, user, row, form):

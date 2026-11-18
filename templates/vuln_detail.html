@@ -121,7 +121,8 @@
   .kv { grid-template-columns: 1fr; }
   .kv > div:nth-last-child(2):not(.full) { border-bottom: 1px solid var(--border); }
   .d-head .actions { width: 100%; }
-  .d-head .actions > .btn-primary, .d-head .actions > .btn-secondary { flex: 1; }
+  .d-head .actions > .btn-primary, .d-head .actions > .btn-secondary, .d-head .actions > .act-menu { flex: 1; }
+  .d-head .act-menu > button { width: 100%; }
   .d-title h1 { font-size: 19px; }
   .sec-head, .sec-body { padding-left: 16px; padding-right: 16px; }
 }
@@ -209,7 +210,7 @@
     avoidance: 3, remediation: 4, verification: 5, temp_mitigation: 5, not_affected: 6, transferred: 6, closed: 6 };
   // Each button opens one form; a form may cover several server actions (e.g. save draft vs submit).
   var GROUPS = [
-    { keys: ["save_assessment", "submit_assessment"], label: "Мэдээлэл бөглөх", icon: "edit", fn: openAssessment },
+    { keys: ["save_assessment", "submit_assessment"], label: "Мэдээлэл бөглөх", icon: "edit", fn: openAssessment, menu: true },
     { keys: ["risk_assess"], label: "Эрсдэлийн үнэлгээ", icon: "flow", fn: openRisk },
     { keys: ["cto_approve", "cto_reject"], label: "Эрсдэл хүлээн зөвшөөрөх эсэх", icon: "check", fn: openCto },
     { keys: ["save_remediation", "submit_fix", "submit_temp", "cannot_remediate"], label: "Засвар / түр хамгаалалт", icon: "wrench", fn: openRemediation },
@@ -218,7 +219,9 @@
     { keys: ["avoid_close"], label: "Хянаж хаах", icon: "check", fn: openAvoidClose },
     { keys: ["temp_resume"], label: "Засвар руу шилжүүлэх", icon: "wrench", fn: function () { simple("temp_resume", "Засвар руу шилжүүлэх", "Patch гарсан эсвэл түр хамгаалалт хангалтгүй болсон тул засварын шатанд буцаана.", true); } },
     { keys: ["resubmit"], label: "Засаад дахин илгээх", icon: "flow", fn: function () { var to = rec.reviewer ? "хүлээн авагчид (" + rec.reviewer.name + ")" : "хүлээн авагчид"; simple("resubmit", "Дахин илгээх", "Засварласан бүртгэлийг " + to + " дахин хянуулна.", false); } },
-    { keys: ["return"], label: "Буцаах", icon: "back", fn: function () { simple("return", "InfoSec-д буцаах", "Мэдээлэл дутуу бол юуг засах шаардлагатайг бичнэ үү.", true); } }
+    { keys: ["return"], label: "Буцаах", icon: "back", fn: function () { simple("return", "InfoSec-д буцаах", "Мэдээлэл дутуу бол юуг засах шаардлагатайг бичнэ үү.", true); } },
+    { keys: ["reassign"], label: "Өөр инженерт шилжүүлэх", icon: "user-plus", fn: openReassign, menu: true },
+    { keys: ["hand_back"], label: "Хүлээн авагчид буцаах", icon: "back", fn: openHandBack, menu: true }
   ];
 
   function nil(text) { return '<span class="nil">' + esc(text || "—") + "</span>"; }
@@ -266,8 +269,20 @@
     var p = rec.perms;
     document.title = rec.ref + " — " + rec.title + " | VulnReg";
     var gs = groups();
+    // The engineer's options (fill in / reassign / return to the Recipient) sit under one «Үйлдэл» dropdown.
+    var menuGs = gs.filter(function (g) { return g.menu; });
+    if (menuGs.length < 2) menuGs = [];
     var btns = gs.map(function (g, i) {
-      return '<button type="button" class="' + (i === 0 ? "btn-primary" : "btn-secondary") + '" data-group="' + GROUPS.indexOf(g) + '"><svg class="ico" aria-hidden="true"><use href="#i-' + g.icon + '"/></svg>' + esc(g.label) + "</button>";
+      var cls = i === 0 ? "btn-primary" : "btn-secondary";
+      if (menuGs.indexOf(g) > 0) return "";
+      if (g === menuGs[0]) {
+        return '<div class="menu-wrap act-menu"><button type="button" class="' + cls + '" id="act-engineer"><svg class="ico" aria-hidden="true"><use href="#i-flow"/></svg>Үйлдэл' +
+          '<svg class="ico" aria-hidden="true"><use href="#i-chevron-down"/></svg></button><div class="menu" id="engineer-menu" role="menu" hidden>' +
+          menuGs.map(function (m) {
+            return '<button type="button" role="menuitem" data-group="' + GROUPS.indexOf(m) + '"><svg class="ico" aria-hidden="true"><use href="#i-' + m.icon + '"/></svg>' + esc(m.label) + "</button>";
+          }).join("") + "</div></div>";
+      }
+      return '<button type="button" class="' + cls + '" data-group="' + GROUPS.indexOf(g) + '"><svg class="ico" aria-hidden="true"><use href="#i-' + g.icon + '"/></svg>' + esc(g.label) + "</button>";
     }).join("");
     var head =
       '<div class="d-head"><div class="d-title"><div class="d-ref">' + esc(rec.ref) + "</div><h1>" + esc(rec.title) + "</h1>" +
@@ -446,7 +461,8 @@
     verify_failed: ["danger", "x", "засагдаагүй гэж буцаав"], verify_temp: ["status", "check", "түр хамгаалалтыг баталгаажуулав"],
     closed: ["created", "check", "бүртгэлийг хаав"], incident_flagged: ["danger", "alert", "ашиглагдсан шинж тэмдэг илрүүлэв — Зөрчлийн удирдлага"],
     accept_expired: ["danger", "refresh", "эрсдэл хүлээн зөвшөөрсөн хугацаа дуусав"], temp_expired: ["danger", "refresh", "түр хамгаалалтын хугацаа дуусав"],
-    risk_accepted: ["status", "check", "эрсдэлийг хүлээн зөвшөөрөв"]
+    risk_accepted: ["status", "check", "эрсдэлийг хүлээн зөвшөөрөв"],
+    handed_back: ["danger", "back", "бүртгэлийг хүлээн авагчид буцаав"], reassigned: ["status", "user-plus", "бүртгэлийг өөр инженерт шилжүүлэв"]
   };
   function tlItem(e) {
     var who = "<b>" + esc(e.actor || "Систем") + "</b>";
@@ -489,6 +505,7 @@
     if ($("act-assign")) $("act-assign").addEventListener("click", openAssign);
     if ($("act-comment")) $("act-comment").addEventListener("click", openComment);
     moreMenu = VR.menu($("act-more"), $("more-menu"));
+    if ($("act-engineer")) VR.menu($("act-engineer"), $("engineer-menu"));
     root.addEventListener("click", onAct);
     var drop = $("drop"), input = $("file-input");
     if (drop) {
@@ -576,7 +593,9 @@
             return;
           }
           dlg.close();
-          if (onSuccess && onSuccess(r, data)) { load(); return; }
+          var handled = onSuccess ? onSuccess(r, data) : false;
+          if (handled === "stop") return;  // the callback took care of the page itself
+          if (handled) { load(); return; }
           done(r);
         });
       });
@@ -1023,6 +1042,53 @@
         return { assignee_id: id, note: f.querySelector('[name="note"]').value.trim() };
       });
       VR.showModal(dlg, form.querySelector("#as-user"));
+    }, function (err) { VR.toast(err.message || "Алдаа гарлаа.", "err"); });
+  }
+
+  // After handing the record over the engineer may lose access to it (no «view all»): go back to the list then.
+  function afterHandover(r) {
+    VR.toast(r.data.message || "Хадгалагдлаа.", "ok");
+    VR.api(BASE + "/api/" + ID).then(function (x) {
+      if (x.ok) { rec = x.data; render(); } else { setTimeout(function () { location.href = BASE; }, 900); }
+    });
+    return "stop";
+  }
+  function openHandBack() {
+    var to = rec.reviewer ? "хүлээн авагч (" + rec.reviewer.name + ")" : "хүлээн авагч";
+    var keep = ["assigned", "under_assessment"].indexOf(rec.status) >= 0;
+    var body = '<p class="hint" style="margin:0">Бүртгэл ' + esc(to) + "-д буцаж, тэр өөр инженер томилно. " +
+      (keep ? "Төлөв «" + esc(VR.STATUS["new"]) + "» болно." : "Төлөв өөрчлөгдөхгүй.") + " Таны оруулсан мэдээлэл хадгалагдана.</p>" +
+      fld("note", "Буцааж буй шалтгаан", { type: "textarea", max: 5000, ph: "Жишээ нь: энэ систем миний хариуцлагад хамаарахгүй" });
+    var dlg = modal("Хүлээн авагчид буцаах", rec.ref + " · " + rec.title, body, rec.actionLabels.hand_back);
+    submitTo(dlg, ACTION_URL(), function (f) {
+      var d = formData(f, ["note"]);
+      if (!requireFields(f, d, ["note"])) return null;
+      d.action = "hand_back"; return d;
+    }, function () {
+      return VR.confirm({ title: "Хүлээн авагчид буцаах уу?", body: "Буцаасны дараа энэ бүртгэл таны хариуцлагаас гарна.", confirmLabel: "Буцаах" });
+    }, afterHandover);
+    VR.showModal(dlg, dlg.querySelector("textarea"));
+  }
+  function openReassign() {
+    VR.options().then(function (O) {
+      var me = rec.assignee ? rec.assignee.id : null;
+      var engineers = (O.engineers || []).filter(function (u) { return u.id !== me; });
+      var body = (engineers.length ? "" : '<div class="m-alert">Өөр инженер эрхтэй хэрэглэгч алга. Хүлээн авагчид буцаана уу.</div>') +
+        '<div class="field"><label for="ra-user">Шилжүүлэх инженер<span class="req">*</span></label><div class="combo"><input id="ra-user" type="text" placeholder="Инженерийн нэрээр хайх…"><input type="hidden" name="assignee_id"></div><span class="err-msg" data-err="assignee_id"></span></div>' +
+        fld("note", "Шилжүүлж буй шалтгаан", { type: "textarea", max: 5000, ph: "Шинэ инженерт өгөх тайлбар, хийгдсэн ажил" }) +
+        '<p class="hint" style="margin:0">Төлөв болон таны оруулсан мэдээлэл хэвээр үлдэнэ. Шинэ инженер болон хүлээн авагчид и-мэйлээр мэдэгдэл очно.</p>';
+      var dlg = modal("Өөр инженерт шилжүүлэх", rec.ref + " · " + rec.title, body, "Шилжүүлэх");
+      var form = dlg.querySelector("form");
+      VR.combo(form.querySelector("#ra-user"), form.querySelector('[name="assignee_id"]'),
+        engineers.map(function (u) { return { id: u.id, label: u.name, sub: u.dept }; }));
+      submitTo(dlg, ACTION_URL(), function (f) {
+        var d = formData(f, ["assignee_id", "note"]), e = {};
+        if (!d.assignee_id) e.assignee_id = "Жагсаалтаас сонгоно уу.";
+        if (!d.note) e.note = "Заавал бөглөнө.";
+        if (!VR.setErrors(f, e)) return null;
+        d.action = "reassign"; return d;
+      }, null, afterHandover);
+      VR.showModal(dlg, form.querySelector("#ra-user"));
     }, function (err) { VR.toast(err.message || "Алдаа гарлаа.", "err"); });
   }
 
